@@ -1,0 +1,7 @@
+# Placeholder Jenkins plugins list
+# Real plugin set will be defined in Phase 07.
+
+docker-workflow
+git
+pipeline-stage-view
+workflow-aggregator

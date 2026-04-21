@@ -1,0 +1,4 @@
+# Placeholder docker-compose.yml
+# Real service orchestration will be implemented in Phase 05.
+
+services: {}
