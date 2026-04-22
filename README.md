@@ -31,7 +31,8 @@ Local-first operations platform for tracking services, deployments, and incident
 ## Current Status
 
 - Phase 00 completed: host baseline and Docker installation validated
-- Phase 01 in progress: repository structure and documentation baseline
+- Phase 01 completed: repository structure and documentation baseline
+- Phase 02 completed: minimal FastAPI app scaffold and operational endpoints
 
 ## Key Technical Decisions
 
@@ -51,4 +52,18 @@ Local-first operations platform for tracking services, deployments, and incident
 
 - assets/screenshots/
 - validation/
+
+
+## Phase 02 Notes
+
+- Minimal FastAPI application scaffold added
+- Operational endpoints available:
+  - /health/live
+  - /health/ready
+  - /version
+- Stub resource endpoints available:
+  - /services
+  - /deployments
+  - /incidents
+- Database-backed readiness will be implemented in Phase 03
 
