@@ -75,3 +75,11 @@ Local-first operations platform for tracking services, deployments, and incident
 - /health/ready now performs a real database reachability check
 - Migrations are managed with Alembic from the repository
 
+
+## Phase 04 Notes
+
+- pytest-based automated tests added
+- Unit tests cover metadata and liveness endpoints
+- Integration tests validate DB-backed resource endpoints
+- Test coverage is generated and stored under validation/test-results/
+

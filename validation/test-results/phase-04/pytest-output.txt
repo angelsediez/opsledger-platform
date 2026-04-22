@@ -1,0 +1,40 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.3, pluggy-1.6.0
+rootdir: /home/angelsediez/projects/opsledger-platform
+configfile: pytest.ini
+plugins: cov-7.1.0, anyio-4.13.0
+collected 4 items
+
+tests/integration/test_resource_api.py ..                                [ 50%]
+tests/unit/test_meta_endpoints.py ..                                     [100%]
+
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.12.3-final-0 ________________
+
+Name                           Stmts   Miss  Cover   Missing
+------------------------------------------------------------
+app/__init__.py                    0      0   100%
+app/db.py                         14      4    71%   31-35
+app/dependencies/__init__.py       0      0   100%
+app/dependencies/runtime.py       10      0   100%
+app/main.py                       10      0   100%
+app/models/__init__.py             4      0   100%
+app/models/deployment.py          12      0   100%
+app/models/incident.py            12      0   100%
+app/models/service.py             13      0   100%
+app/routers/__init__.py            0      0   100%
+app/routers/deployments.py        22      1    95%   32
+app/routers/health.py             18      2    89%   36-37
+app/routers/incidents.py          22      1    95%   26
+app/routers/services.py           21      1    95%   25
+app/routers/version.py             7      0   100%
+app/schemas/__init__.py            0      0   100%
+app/schemas/deployment.py         15      0   100%
+app/schemas/health.py             13      0   100%
+app/schemas/incident.py           15      0   100%
+app/schemas/service.py            15      0   100%
+app/schemas/version.py             5      0   100%
+------------------------------------------------------------
+TOTAL                            228      9    96%
+Coverage HTML written to dir validation/test-results/phase-04/htmlcov
+============================== 4 passed in 0.55s ===============================

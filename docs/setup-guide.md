@@ -86,3 +86,23 @@ Create the PostgreSQL development container:
     export DATABASE_URL="postgresql+psycopg://opsledger:change-me@127.0.0.1:5432/opsledger"
     uvicorn app.main:app --reload
 
+
+## Phase 04 — Automated Tests with pytest
+
+### Test database
+
+The test suite uses a dedicated PostgreSQL database:
+
+    opsledger_test
+
+Create it inside the existing PostgreSQL container:
+
+    docker exec opsledger-postgres-dev psql -U opsledger -d postgres -c "DROP DATABASE IF EXISTS opsledger_test WITH (FORCE);"
+    docker exec opsledger-postgres-dev psql -U opsledger -d postgres -c "CREATE DATABASE opsledger_test;"
+
+### Run tests
+
+    source .venv/bin/activate
+    export TEST_DATABASE_URL="postgresql+psycopg://opsledger:change-me@127.0.0.1:5432/opsledger_test"
+    pytest --cov=app --cov-report=term-missing tests
+
