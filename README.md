@@ -67,3 +67,11 @@ Local-first operations platform for tracking services, deployments, and incident
   - /incidents
 - Database-backed readiness will be implemented in Phase 03
 
+
+## Phase 03 Notes
+
+- PostgreSQL integration added through SQLAlchemy and Alembic
+- API resources now persist data in PostgreSQL
+- /health/ready now performs a real database reachability check
+- Migrations are managed with Alembic from the repository
+

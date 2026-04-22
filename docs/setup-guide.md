@@ -52,3 +52,37 @@ uvicorn app.main:app --reload
 - `/health/ready` is still provisional in Phase 02.
 - PostgreSQL-backed readiness starts in Phase 03.
 - Domain endpoints are still stub responses in this phase.
+
+## Phase 03 — PostgreSQL, SQLAlchemy, and Alembic
+
+### Development database container
+
+Create the PostgreSQL development container:
+
+    docker volume create opsledger_postgres_dev
+
+    docker run -d \
+      --name opsledger-postgres-dev \
+      -e POSTGRES_DB=opsledger \
+      -e POSTGRES_USER=opsledger \
+      -e POSTGRES_PASSWORD=change-me \
+      -p 5432:5432 \
+      -v opsledger_postgres_dev:/var/lib/postgresql/data \
+      postgres:17
+
+### Install database dependencies
+
+    source .venv/bin/activate
+    pip install -r requirements.txt -r requirements-dev.txt
+
+### Run migrations
+
+    export DATABASE_URL="postgresql+psycopg://opsledger:change-me@127.0.0.1:5432/opsledger"
+    alembic upgrade head
+
+### Run the API
+
+    source .venv/bin/activate
+    export DATABASE_URL="postgresql+psycopg://opsledger:change-me@127.0.0.1:5432/opsledger"
+    uvicorn app.main:app --reload
+

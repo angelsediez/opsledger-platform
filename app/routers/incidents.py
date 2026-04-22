@@ -1,24 +1,35 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.schemas.incident import Incident, IncidentListResponse
+from app.db import get_db_session
+from app.models.incident import Incident
+from app.models.service import Service
+from app.schemas.incident import IncidentCreate, IncidentListResponse, IncidentRead
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
-INCIDENTS = [
-    Incident(
-        id=1,
-        service_name="opsledger-api",
-        severity="low",
-        status="open",
-        summary="Sample incident used to validate API structure before database integration.",
-    )
-]
-
 
 @router.get("", response_model=IncidentListResponse)
-def list_incidents() -> IncidentListResponse:
-    return IncidentListResponse(
-        items=INCIDENTS,
-        total=len(INCIDENTS),
-        source="stub",
-    )
+def list_incidents(db: Session = Depends(get_db_session)) -> IncidentListResponse:
+    items = db.scalars(select(Incident).order_by(Incident.id)).all()
+    return IncidentListResponse(items=items, total=len(items), source="database")
+
+
+@router.post("", response_model=IncidentRead, status_code=status.HTTP_201_CREATED)
+def create_incident(
+    payload: IncidentCreate,
+    db: Session = Depends(get_db_session),
+) -> IncidentRead:
+    service = db.get(Service, payload.service_id)
+    if service is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"service_id '{payload.service_id}' does not exist",
+        )
+
+    incident = Incident(**payload.model_dump())
+    db.add(incident)
+    db.commit()
+    db.refresh(incident)
+    return incident
