@@ -66,6 +66,7 @@ Completed so far:
 - Phase 05 — app dockerized and stack runs with Docker Compose
 - Phase 06 — Nginx added as reverse proxy in front of the app
 - Phase 07 — Jenkins local-lab added with controller + static Docker-capable agent
+- Phase 08 — Jenkins Pipeline as Code implemented with a real CI pipeline
 
 ## Key Technical Decisions
 
@@ -93,7 +94,7 @@ Completed so far:
 
 - **Jenkins execution strategy:**
   - controller with `0` executors
-  - builds intended to run on the agent, not on the controller
+  - builds run on the agent, not on the controller
 
 - **Docker socket tradeoff:**
   - `/var/run/docker.sock` is mounted only on the Jenkins agent
@@ -197,7 +198,7 @@ set -a
 source .env
 set +a
 
-ss -ltnp | grep ":${NGINX_PORT}\\b" || true
+ss -ltnp | grep ":${NGINX_PORT}\b" || true
 ```
 
 4. Build and start the app stack.
@@ -236,17 +237,21 @@ curl -s http://127.0.0.1:${NGINX_PORT}/version | jq
 
 ## Jenkins Local-Lab
 
-Phase 07 adds a separate Jenkins control plane to the same local environment:
+Phase 07 added a separate Jenkins control plane to the same local environment:
 
 - `jenkins-controller`
 - `jenkins-agent`
+
+Phase 08 turns that runtime into a real CI baseline using `Jenkinsfile` from the repository.
 
 ### Jenkins Runtime Goals
 
 - keep the setup simple and interview-defensible
 - separate controller and agent
 - keep builds off the controller
-- prepare the repository for Jenkinsfile-based CI in the next phase
+- execute CI through Pipeline as Code from the repo
+
+### Initial Jenkins Runtime Validation
 
 1. Check that the Jenkins host port is free.
 
@@ -255,7 +260,7 @@ set -a
 source .env
 set +a
 
-ss -ltnp | grep ":${JENKINS_HTTP_PORT}\\b" || true
+ss -ltnp | grep ":${JENKINS_HTTP_PORT}\b" || true
 ```
 
 2. Start only the controller first.
@@ -267,6 +272,10 @@ docker compose up -d --build jenkins-controller
 3. Wait for Jenkins to finish initializing.
 
 ```bash
+set -a
+source .env
+set +a
+
 until curl -fsS http://127.0.0.1:${JENKINS_HTTP_PORT}/login >/dev/null 2>&1; do
   echo "Waiting for Jenkins controller to finish initializing..."
   sleep 5
@@ -290,19 +299,19 @@ Use credentials from `.env`:
 
 Use these values:
 
-- **Node name:** `docker-agent`
-- **Type:** `Permanent Agent`
-- **Remote root directory:** `/home/jenkins/agent`
-- **Labels:** `docker linux local`
-- **Number of executors:** `2`
-- **Usage:** `Only build jobs with label expressions matching this node`
-- **Launch method:** `Launch agent by connecting it to the controller`
+- Node name: `docker-agent`
+- Type: `Permanent Agent`
+- Remote root directory: `/home/jenkins/agent`
+- Labels: `docker linux local`
+- Number of executors: `2`
+- Usage: `Only build jobs with label expressions matching this node`
+- Launch method: `Launch agent by connecting it to the controller`
 
 6. Set the agent secret in `.env`.
 
 After Jenkins shows the inbound agent secret, set:
 
-```bash
+```text
 JENKINS_AGENT_SECRET=<copied-secret>
 ```
 
@@ -319,21 +328,101 @@ set -a
 source .env
 set +a
 
-curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}" \
-  "http://127.0.0.1:${JENKINS_HTTP_PORT}/computer/${JENKINS_AGENT_NAME}/api/json" \
-  | jq '{displayName,offline,temporarilyOffline,assignedLabels}'
+curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}"   "http://127.0.0.1:${JENKINS_HTTP_PORT}/computer/${JENKINS_AGENT_NAME}/api/json"   | jq '{displayName,offline,temporarilyOffline,assignedLabels}'
 ```
 
 9. Validate installed plugins.
 
 ```bash
-docker compose exec jenkins-controller ls /var/jenkins_home/plugins | egrep 'workflow-aggregator|pipeline-stage-view|git|credentials|matrix-auth|docker-workflow|pipeline-utility-steps'
+docker compose exec jenkins-controller ls /var/jenkins_home/plugins | egrep 'workflow-aggregator|pipeline-stage-view|git|credentials|matrix-auth|docker-workflow|pipeline-utility-steps|junit|timestamper'
 ```
 
 10. Validate agent tools.
 
 ```bash
 docker compose exec jenkins-agent sh -c 'docker --version && docker compose version && git --version && python3 --version && make --version | head -n 1 && jq --version'
+```
+
+## Jenkins Pipeline CI
+
+Phase 08 adds a real CI pipeline driven by the repository `Jenkinsfile`.
+
+### What the current pipeline does
+
+- checkout from SCM
+- validate tools and runtime environment on the agent
+- prepare a CI-local `.env`
+- validate Docker Compose configuration
+- prepare Python virtual environment
+- recreate the PostgreSQL test database
+- run pytest with coverage
+- publish JUnit results
+- archive test output and coverage artifacts
+
+### Create the Jenkins job
+
+Create a Jenkins job of type:
+
+```text
+Pipeline
+```
+
+Use:
+
+```text
+Pipeline script from SCM
+```
+
+Configuration:
+
+- Definition: `Pipeline script from SCM`
+- SCM: `Git`
+- Branch Specifier: `*/main`
+- Script Path: `Jenkinsfile`
+
+### Repository URL note
+
+- if `git remote get-url origin` returns an SSH URL and Jenkins does not have SSH credentials configured, use the HTTPS URL of the public repository in the job configuration
+- if the repository is private, configure the proper Jenkins credentials and use the correct repository URL accordingly
+
+### Trigger the build from Jenkins UI
+
+Open the job and click:
+
+```text
+Build Now
+```
+
+### Trigger the build from the Jenkins API
+
+```bash
+set -a
+source .env
+set +a
+
+CRUMB=$(curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}"   "http://127.0.0.1:${JENKINS_HTTP_PORT}/crumbIssuer/api/json"   | jq -r '.crumbRequestField + ":" + .crumb')
+
+curl -s -X POST   -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}"   -H "${CRUMB}"   "http://127.0.0.1:${JENKINS_HTTP_PORT}/job/opsledger-ci/build"
+```
+
+### Validate the last build
+
+```bash
+set -a
+source .env
+set +a
+
+curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}"   "http://127.0.0.1:${JENKINS_HTTP_PORT}/job/opsledger-ci/lastBuild/api/json"   | jq '{number,result,building,duration,timestamp}'
+```
+
+### Validate published test results
+
+```bash
+set -a
+source .env
+set +a
+
+curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}"   "http://127.0.0.1:${JENKINS_HTTP_PORT}/job/opsledger-ci/lastBuild/testReport/api/json"   | jq '{failCount,skipCount,totalCount}'
 ```
 
 ## Important Networking Note
@@ -496,13 +585,11 @@ set +a
 
 SERVICE_NAME="opsledger-api-nginx-$(date +%s)"
 
-SERVICE_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/services" \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"name\":\"${SERVICE_NAME}\",
-    \"owner_team\":\"platform\",
-    \"tier\":\"internal\",
-    \"description\":\"Nginx reverse proxy validation service.\"
+SERVICE_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/services"   -H 'Content-Type: application/json'   -d "{
+    "name":"${SERVICE_NAME}",
+    "owner_team":"platform",
+    "tier":"internal",
+    "description":"Nginx reverse proxy validation service."
   }")
 
 echo "${SERVICE_RESPONSE}" | jq
@@ -513,26 +600,22 @@ echo "Captured SERVICE_ID=${SERVICE_ID}"
 
 curl -s "http://127.0.0.1:${NGINX_PORT}/services" | jq
 
-DEPLOYMENT_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/deployments" \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"service_id\": ${SERVICE_ID},
-    \"version\":\"0.1.0\",
-    \"environment\":\"local\",
-    \"status\":\"planned\"
+DEPLOYMENT_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/deployments"   -H 'Content-Type: application/json'   -d "{
+    "service_id": ${SERVICE_ID},
+    "version":"0.1.0",
+    "environment":"local",
+    "status":"planned"
   }")
 
 echo "${DEPLOYMENT_RESPONSE}" | jq
 
 curl -s "http://127.0.0.1:${NGINX_PORT}/deployments" | jq
 
-INCIDENT_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/incidents" \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"service_id\": ${SERVICE_ID},
-    \"severity\":\"low\",
-    \"status\":\"open\",
-    \"summary\":\"Nginx reverse proxy validation incident.\"
+INCIDENT_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/incidents"   -H 'Content-Type: application/json'   -d "{
+    "service_id": ${SERVICE_ID},
+    "severity":"low",
+    "status":"open",
+    "summary":"Nginx reverse proxy validation incident."
   }")
 
 echo "${INCIDENT_RESPONSE}" | jq
@@ -542,7 +625,7 @@ curl -s "http://127.0.0.1:${NGINX_PORT}/incidents" | jq
 
 ## Jenkins Plugin Baseline
 
-The Phase 07 plugin baseline is:
+The Phase 08 plugin baseline is:
 
 - `workflow-aggregator`
 - `pipeline-stage-view`
@@ -551,8 +634,10 @@ The Phase 07 plugin baseline is:
 - `matrix-auth`
 - `docker-workflow`
 - `pipeline-utility-steps`
+- `junit`
+- `timestamper`
 
-This is enough to prepare the repository for Pipeline-as-Code in the next phase without over-engineering the Jenkins runtime.
+This plugin set is enough to support the current CI pipeline without over-engineering the Jenkins runtime.
 
 ## Documentation
 
@@ -600,13 +685,12 @@ host -> nginx -> app -> postgres
 Current CI execution model:
 
 ```text
-jenkins-controller -> jenkins-agent -> host docker socket
+jenkins-controller -> jenkins-agent -> repository workspace -> Docker Compose / pytest
 ```
 
 Later phases will extend this with:
 
-- Jenkins Pipeline-as-Code
-- CI stages
+- image build validation
 - blue/green deployment logic
 - rollback scripts
 
@@ -622,6 +706,7 @@ The repository stores visual and operational evidence such as:
 - Nginx reverse proxy validation
 - Jenkins controller validation
 - Jenkins agent connectivity validation
+- Jenkins pipeline execution validation
 
 ### Suggested Evidence Locations
 
@@ -633,6 +718,7 @@ The repository stores visual and operational evidence such as:
 - `assets/screenshots/phase-05/`
 - `assets/screenshots/phase-06/`
 - `assets/screenshots/phase-07/`
+- `assets/screenshots/phase-08/`
 
 ## Roadmap
 

@@ -5,3 +5,5 @@ credentials
 matrix-auth
 docker-workflow
 pipeline-utility-steps
+junit
+timestamper

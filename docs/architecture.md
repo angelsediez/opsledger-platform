@@ -266,6 +266,7 @@ This keeps Jenkins state persistent across container recreation while preserving
 Operational runtime checks now exist across both the application stack and the CI control plane:
 
 #### Application stack
+
 - PostgreSQL health:
   - `pg_isready`
 - app health:
@@ -274,6 +275,7 @@ Operational runtime checks now exist across both the application stack and the C
   - configuration/runtime validation through container healthcheck
 
 #### Jenkins stack
+
 - Jenkins controller health:
   - login endpoint reachable
 - Jenkins agent state:
@@ -303,19 +305,104 @@ That makes the project significantly more defensible in interviews than a setup 
 At this point, the local architecture contains two coordinated domains:
 
 #### Application runtime
+
 - host -> nginx -> app -> postgres
 
 #### CI runtime
+
 - host -> jenkins-controller -> jenkins-agent -> host docker socket
 
 These domains remain separate enough to reason about clearly, while still living inside the same local-lab environment.
+
+## Phase 08 Update — CI execution enters the repository
+
+At this phase the Jenkins runtime stops being only infrastructure and starts executing a real CI pipeline from the repository itself.
+
+### Pipeline Execution Model
+
+- the pipeline definition lives in `Jenkinsfile`
+- Jenkins loads the pipeline from SCM
+- the pipeline is executed on the static agent
+- the controller remains orchestration-only
+
+This means the CI behavior is now versioned with the repository instead of living only in Jenkins UI configuration.
+
+### Execution Path
+
+Current CI execution path is:
+
+- Jenkins controller -> Jenkins agent -> repository workspace -> Docker Compose / pytest
+
+The agent is now the actual execution surface for repository validation.
+
+### Current CI Responsibilities
+
+The current pipeline handles:
+
+- source checkout
+- environment validation
+- CI-local `.env` preparation
+- Docker Compose configuration validation
+- Python virtual environment preparation
+- PostgreSQL test database preparation
+- pytest execution
+- JUnit result publication
+- artifact archiving
+
+This is the first phase where Jenkins is no longer just “present” in the stack, but actually performs useful CI work against the repository.
+
+### Pipeline Boundary at Phase 08
+
+What is implemented now:
+
+- SCM-backed Pipeline as Code
+- execution on the labeled static agent
+- repository validation
+- test database recreation for CI
+- pytest-based CI verification
+- JUnit and artifact publication
+
+What is still intentionally deferred:
+
+- deployment stages
+- image promotion flow
+- blue/green switch logic
+- rollback automation
+
+This keeps the CI design clean and interview-defensible without jumping too early into deployment complexity.
+
+### Why Phase 08 Matters Architecturally
+
+Phase 08 is important because the project now has:
+
+- a fronted application runtime
+- a persistent database runtime
+- a Jenkins controller/agent split
+- a real repository-driven CI path
+
+That combination moves the project from “infra prepared for CI” to “infra actively validating the repo.”
+
+This is a significant jump in credibility because the repository now contains not only the application code and operational docs, but also the executable CI behavior.
+
+### Current Runtime Summary After Phase 08
+
+At this point, the local architecture contains two active coordinated domains:
+
+#### Application runtime
+
+- host -> nginx -> app -> postgres
+
+#### CI runtime
+
+- host -> jenkins-controller -> jenkins-agent -> repository workspace -> Docker Compose / pytest
+
+The CI runtime now consumes the same repository that defines the application and operational stack.
 
 ### Next Architectural Step
 
 Later phases will extend this architecture with:
 
-- Jenkins Pipeline-as-Code execution
-- CI stages driven from the repository Jenkinsfile
+- image build validation and stronger artifact handling
 - blue/green deployment logic
 - rollback flow
 - runbooks and operational recovery procedures

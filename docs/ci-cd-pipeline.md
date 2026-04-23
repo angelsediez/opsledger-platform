@@ -4,86 +4,114 @@
 
 This document describes the intended CI/CD shape of the OpsLedger Platform project.
 
-At the current phase, the pipeline is not fully implemented yet, but the runtime foundation for CI now exists locally through Jenkins controller + static agent.
+At Phase 08, the project now has a functional Jenkins CI pipeline driven by the repository `Jenkinsfile`.
 
-The goal of this document is to make the pipeline direction explicit before the full `Jenkinsfile` implementation is added.
+The goal of this document is to define clearly what is implemented now and what is intentionally deferred to later phases.
 
-## Planned Stages
+## Current CI Pipeline
+
+The current Jenkins pipeline is a Declarative Pipeline stored in the repository root as:
+
+- `Jenkinsfile`
+
+The job is configured as:
+
+- `Pipeline`
+- `Pipeline script from SCM`
+- SCM: `Git`
+
+This keeps the pipeline versioned with the source code and aligned with the Pipeline-as-Code model.
+
+## Current Execution Model
+
+- Jenkins controller coordinates
+- Jenkins agent executes
+- controller executors remain `0`
+- pipeline uses the agent label:
+  - `docker && linux && local`
+
+## Job Configuration Note
+
+When configuring the Jenkins job repository URL:
+
+- if `git remote get-url origin` returns an SSH URL and Jenkins does not have SSH credentials configured, use the HTTPS URL of the public repository in the job configuration
+- if the repository is private, configure the proper Jenkins credentials and use the correct repository URL accordingly
+
+## Implemented Phase 08 Stages
 
 1. Checkout source
-2. Create/activate Python environment
-3. Install dependencies
-4. Run tests
-5. Build application image
-6. Deploy inactive color
-7. Run health validation
-8. Switch Nginx upstream
-9. Keep previous color available for rollback
+2. Validate tools and runtime environment
+3. Prepare CI `.env`
+4. Validate Docker Compose configuration
+5. Prepare Python virtual environment
+6. Prepare PostgreSQL test database
+7. Run pytest with coverage and JUnit XML output
 
-## Jenkins Model
+## Stage Intent
 
-- Jenkinsfile in repository
-- controller coordinates
-- agent executes build/test/deploy tasks
+### Checkout
 
-## Phase 07 Update — Jenkins runtime baseline
+Performs `checkout scm` from the repository configured in Jenkins.
 
-At Phase 07, the project now has a local Jenkins runtime baseline composed of:
+### Validate Environment
 
-- `jenkins-controller`
-- `jenkins-agent`
+Confirms the Jenkins agent has the required tools:
 
-This does not yet implement the full CI/CD pipeline, but it prepares the environment required to do so cleanly in the next phase.
-
-## Execution Model
-
-The Jenkins runtime follows a controller/agent split:
-
-- controller: orchestration only
-- agent: execution node
-
-The controller is configured with:
-
-- `0` executors
-
-This means builds are not intended to run on the controller.
-
-The static agent is the node that should execute future pipeline stages.
-
-## Agent Label Strategy
-
-The static agent is expected to use labels such as:
-
-- `docker`
-- `linux`
-- `local`
-
-This gives a clean baseline for future `Jenkinsfile` agent selection.
-
-## Why the Agent Matters
-
-The agent is prepared with the tools needed for the next phase of CI work, including:
-
-- Docker CLI
-- Docker Compose plugin
-- git
 - python3
+- pip3
+- git
+- docker
+- docker compose
 - make
 - jq
 
-This makes the agent suitable for:
+### Prepare CI Env File
 
-- source checkout
-- dependency installation
-- test execution
-- image build operations
-- local stack validation
+Creates a CI-local `.env` in the workspace so Compose and test commands have the expected variables without depending on a developer-local `.env`.
 
-## Plugin Baseline
+### Validate Compose Configuration
 
-The Jenkins plugin baseline at this phase is intentionally small and focused.
+Runs Compose rendering validation before using any Compose service.
 
-Current plugin set:
+### Prepare Python
+
+Creates `.venv` and installs the project dependencies.
+
+### Prepare Test Database
+
+Ensures PostgreSQL is available and recreates:
+
+- `opsledger_test`
+
+### Run Tests
+
+Runs the project pytest suite with:
+
+- terminal coverage output
+- HTML coverage output
+- JUnit XML output
+
+## Current Output and Artifacts
+
+The pipeline currently publishes:
+
+- JUnit XML test results
+- archived test output
+- archived coverage HTML report
+
+Artifacts are generated under:
+
+- `validation/test-results/phase-08/`
+
+Expected files include:
+
+- `pytest-output.txt`
+- `junit.xml`
+- `htmlcov/`
+
+## Current Plugin Baseline
+
+The Jenkins plugin baseline required by this phase is:
 
 - `workflow-aggregator`
 - `pipeline-stage-view`
@@ -92,62 +120,44 @@ Current plugin set:
 - `matrix-auth`
 - `docker-workflow`
 - `pipeline-utility-steps`
+- `junit`
+- `timestamper`
 
-This is enough to support the transition into Pipeline-as-Code without overloading the local-lab Jenkins environment.
+## Validation Expectations for Phase 08
 
-## Local-Lab Tradeoff
+A successful Phase 08 run should show:
 
-The Jenkins agent mounts the host Docker socket:
+- pipeline job created in Jenkins
+- checkout from SCM
+- execution on the static agent
+- environment validation passed
+- Compose configuration validation passed
+- PostgreSQL test database recreated
+- pytest passed
+- JUnit results visible in Jenkins
+- archived artifacts visible in Jenkins
 
-- `/var/run/docker.sock`
+## What Is Still Intentionally Deferred
 
-This is accepted only as a local-lab tradeoff so the agent can interact with the local Docker environment directly.
+This phase does not yet implement:
 
-This should be treated as:
-
-- practical for a portfolio lab
-- useful for local CI/CD demonstration
-- not equivalent to production-grade isolation
-
-## Current Phase Boundary
-
-At Phase 07, Jenkins runtime is present, but the actual CI pipeline is still pending.
-
-That means:
-
-### Already in place
-- Jenkins controller
-- Jenkins static agent
-- plugin baseline
-- controller login
-- agent connectivity
-- Docker-capable execution node
-- repository `Jenkinsfile` placeholder
-
-### Not implemented yet
-- real pipeline stages
-- automated test execution from Jenkins
-- automated image build from Jenkins
-- automated deployment flow from Jenkins
-- blue/green switching
+- automated image build/publish stage
+- deployment stage
+- Nginx switch logic
+- blue/green deployment
 - rollback automation
 
-## Expected Pipeline Direction for the Next Phase
+Those remain future phases by design.
 
-The next phase should turn the runtime baseline into a working CI pipeline driven by the repository `Jenkinsfile`.
+## Next Pipeline Direction
 
-The expected near-term flow is:
+The next phase should extend the current CI baseline toward:
 
-1. checkout repository
-2. run Python dependency installation
-3. run pytest suite
-4. build application image
-5. validate build output
-6. prepare later deployment steps
+- image build validation
+- stronger artifact handling
+- deployment orchestration groundwork
 
-## Relationship to Later Deployment Phases
-
-The current planned stages already reflect the final intended direction:
+The eventual long-term flow remains:
 
 1. Checkout source
 2. Create/activate Python environment
@@ -159,51 +169,4 @@ The current planned stages already reflect the final intended direction:
 8. Switch Nginx upstream
 9. Keep previous color available for rollback
 
-However, phases 08+ will progressively split these into:
-
-- CI baseline
-- deploy orchestration
-- switch logic
-- rollback logic
-
-## Pipeline Design Constraints
-
-The CI/CD design must keep the same project constraints already established:
-
-- local-first
-- no Kubernetes
-- no cloud dependency
-- Jenkins controller + static agent
-- Nginx remains the public app entrypoint
-- PostgreSQL remains on host port `5433`
-- app-to-postgres traffic remains internal:
-  - `postgres:5432`
-- Python PostgreSQL driver remains:
-  - `psycopg[binary]==3.3.3`
-
-## Validation Expectations for Phase 07
-
-At the current phase, Jenkins validation should confirm:
-
-- controller is up
-- controller login is reachable
-- controller has plugin baseline installed
-- controller is not the main execution node
-- agent is connected and online
-- agent has required local build tools
-- Jenkins runtime is ready for `Jenkinsfile` implementation
-
-## Summary
-
-Phase 07 does not yet deliver the full CI/CD pipeline.
-
-What it does deliver is the required runtime foundation:
-
-- controller
-- static agent
-- plugin baseline
-- execution model
-- Docker-capable build node
-- clean transition point into Pipeline-as-Code
-
-This is the correct stopping point before implementing the real Jenkins pipeline in the next phase.
+Phase 08 implements the CI portion of that roadmap without yet crossing into deployment automation.
