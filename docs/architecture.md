@@ -164,13 +164,158 @@ This is the first phase where the runtime layout looks closer to a real deployme
 
 This is still intentionally local-first and simple, but it is much more interview-defensible than exposing the application container directly as the primary user entrypoint.
 
+## Phase 07 Update — Local Jenkins control plane
+
+At this stage the local environment also includes a Jenkins control plane composed of:
+
+- `jenkins-controller`
+- `jenkins-agent`
+
+This is intentionally a local-lab design: clean enough to explain in interviews, but not over-engineered.
+
+### Jenkins Execution Model
+
+The Jenkins runtime follows a controller/agent split:
+
+- controller: orchestration only
+- agent: build execution
+
+The controller is configured with:
+
+- `0` executors
+
+This is intentional. The controller should not be used as the main execution node for builds. Build execution is delegated to the static agent.
+
+### Jenkins Connectivity Model
+
+The static agent connects inbound to the controller using:
+
+- WebSocket inbound mode
+
+This keeps the local topology simpler because it avoids exposing the classic Jenkins TCP agent port externally.
+
+### Jenkins Tooling Model
+
+The Jenkins agent is Docker-capable and is prepared to run future CI tasks with tools such as:
+
+- Docker CLI
+- Docker Compose plugin
+- git
+- python3
+- make
+- jq
+
+This makes the agent a practical execution node for the pipeline work that begins in later phases.
+
+### Docker Socket Tradeoff
+
+The Jenkins agent mounts the host Docker socket:
+
+- `/var/run/docker.sock`
+
+This is accepted only as a local-lab tradeoff.
+
+It is useful here because it allows the agent to build images and operate the local Docker environment without introducing a more complex build runner design.
+
+However, this must be understood clearly:
+
+- this is not production-grade isolation
+- this is not a hardened multi-tenant CI design
+- this is an intentional local-lab shortcut for practicality
+
+### Jenkins Network Placement
+
+Both Jenkins services remain attached to the same Compose network:
+
+- `opsledger_net`
+
+This allows the agent to reach the controller internally by service name.
+
+The internal controller URL used by the agent is:
+
+- `http://jenkins-controller:8080/`
+
+### Host Exposure at Phase 07
+
+At this phase, the relevant host-facing entry points become:
+
+- Nginx:
+  - `127.0.0.1:${NGINX_PORT}`
+- PostgreSQL:
+  - `127.0.0.1:5433`
+- Jenkins controller:
+  - `127.0.0.1:${JENKINS_HTTP_PORT}`
+
+The Jenkins agent is not exposed to the host as a public service entrypoint.
+
+### Persistence at Phase 07
+
+Persistence now exists in three main places:
+
+- PostgreSQL data:
+  - `opsledger_postgres_data`
+- Jenkins controller state:
+  - `jenkins_home`
+- Jenkins agent work directory:
+  - `jenkins_agent_workdir`
+
+This keeps Jenkins state persistent across container recreation while preserving the existing database persistence model.
+
+### Health and Runtime State at Phase 07
+
+Operational runtime checks now exist across both the application stack and the CI control plane:
+
+#### Application stack
+- PostgreSQL health:
+  - `pg_isready`
+- app health:
+  - `/health/live`
+- Nginx health:
+  - configuration/runtime validation through container healthcheck
+
+#### Jenkins stack
+- Jenkins controller health:
+  - login endpoint reachable
+- Jenkins agent state:
+  - online and connected to controller
+
+### Why This Phase Matters
+
+This phase matters architecturally because it introduces a real CI control plane without yet introducing the complexity of:
+
+- pipeline stages
+- deployment orchestration
+- blue/green switch logic
+- rollback automation
+
+In other words:
+
+- the application runtime is now fronted by Nginx
+- the CI runtime now exists as controller + agent
+- both are local-first
+- both are versioned inside the repository
+- both are simple enough to operate and explain
+
+That makes the project significantly more defensible in interviews than a setup that only exposes an app container without a proxy or a CI control plane.
+
+### Current Runtime Summary After Phase 07
+
+At this point, the local architecture contains two coordinated domains:
+
+#### Application runtime
+- host -> nginx -> app -> postgres
+
+#### CI runtime
+- host -> jenkins-controller -> jenkins-agent -> host docker socket
+
+These domains remain separate enough to reason about clearly, while still living inside the same local-lab environment.
+
 ### Next Architectural Step
 
-Later phases will extend this topology with:
+Later phases will extend this architecture with:
 
-- Jenkins controller
-- Jenkins static agent
-- pipeline execution
+- Jenkins Pipeline-as-Code execution
+- CI stages driven from the repository Jenkinsfile
 - blue/green deployment logic
 - rollback flow
 - runbooks and operational recovery procedures
