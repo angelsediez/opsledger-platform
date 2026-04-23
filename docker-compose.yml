@@ -29,8 +29,8 @@ services:
       APP_ENV: ${APP_ENV}
       APP_VERSION: ${APP_VERSION}
       DATABASE_URL: ${DATABASE_URL}
-    ports:
-      - "${APP_PORT}:8000"
+    expose:
+      - "8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -48,6 +48,25 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  nginx:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "${NGINX_PORT}:80"
+    volumes:
+      - ./docker/nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - opsledger_net
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 networks:
   opsledger_net:

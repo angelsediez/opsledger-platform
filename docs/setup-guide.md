@@ -20,10 +20,10 @@ This document currently covers:
 - Docker Compose runtime for:
   - app
   - postgres
+  - nginx reverse proxy
 
 Later phases will extend this document with:
 
-- Nginx reverse proxy
 - Jenkins controller and agent
 - CI pipeline execution
 - blue/green deployment
@@ -126,13 +126,14 @@ The most important variables at the current phase are:
 - `APP_ENV`
 - `APP_VERSION`
 - `APP_PORT`
+- `NGINX_PORT`
 - `POSTGRES_DB`
 - `POSTGRES_USER`
 - `POSTGRES_PASSWORD`
 - `POSTGRES_PORT`
 - `DATABASE_URL`
 
-## Important Port Note
+### Important Port Note
 
 This project intentionally publishes the Compose PostgreSQL service to the host on:
 
@@ -140,7 +141,7 @@ This project intentionally publishes the Compose PostgreSQL service to the host 
 127.0.0.1:5433
 ```
 
-This avoids conflict with any PostgreSQL already using host port `5432`.
+This avoids conflict with any PostgreSQL already using host port 5432.
 
 Inside the Compose network, the application still connects to PostgreSQL using:
 
@@ -150,8 +151,14 @@ postgres:5432
 
 That means:
 
-- host-side access: `127.0.0.1:5433`
-- container-to-container access: `postgres:5432`
+- host-side PostgreSQL access: `127.0.0.1:5433`
+- container-to-container PostgreSQL access: `postgres:5432`
+
+At Phase 06, the application itself is accessed from the host through Nginx on:
+
+```text
+127.0.0.1:${NGINX_PORT}
+```
 
 ## Local Development Database (Pre-Compose Workflow)
 
@@ -263,7 +270,7 @@ alembic revision --autogenerate -m "describe the change here"
 
 Because the project will later support blue/green deployment and rollback, migration design must remain conservative.
 
-### Required rules
+Required rules:
 
 - prefer additive schema changes first
 - avoid destructive schema changes in the same release where rollback is expected
@@ -330,12 +337,13 @@ pytest --collect-only
 
 ## Docker Compose Runtime (Current Recommended Run Path)
 
-As of Phase 05, the preferred local runtime is Docker Compose.
+As of Phase 06, the preferred local runtime is Docker Compose with Nginx in front of the application.
 
 The current stack includes:
 
 - `postgres`
 - `app`
+- `nginx`
 
 ## Compose Run Procedure
 
@@ -351,13 +359,29 @@ cp .env.example .env
 docker compose config
 ```
 
-### 3. Build and start the stack
+### 3. Verify that `${NGINX_PORT}` is free on the host
 
 ```bash
+set -a
+source .env
+set +a
+
+ss -ltnp | grep ":${NGINX_PORT}\b" || true
+```
+
+Expected result:
+
+- if nothing is shown, the port is free
+- if a process is already listening there, stop it or change `NGINX_PORT` in `.env`
+
+### 4. Recreate the stack
+
+```bash
+docker compose down
 docker compose up -d --build
 ```
 
-### 4. Check running services
+### 5. Check running services
 
 ```bash
 docker compose ps
@@ -377,6 +401,12 @@ docker compose logs --no-color postgres
 docker compose logs --no-color app
 ```
 
+### View Nginx logs
+
+```bash
+docker compose logs --no-color nginx
+```
+
 ### Inspect PostgreSQL health status
 
 ```bash
@@ -387,6 +417,12 @@ docker inspect --format='{{json .State.Health}}' $(docker compose ps -q postgres
 
 ```bash
 docker inspect --format='{{json .State.Health}}' $(docker compose ps -q app)
+```
+
+### Inspect Nginx health status
+
+```bash
+docker inspect --format='{{json .State.Health}}' $(docker compose ps -q nginx)
 ```
 
 ## Run Migrations Inside Compose
@@ -411,58 +447,107 @@ docker compose exec app alembic current
 docker compose exec postgres psql -U opsledger -d opsledger -c "\dt"
 ```
 
-## Validate the Running API in Compose
+## Nginx Validation
 
-### Health endpoints
+### Validate Nginx configuration
 
 ```bash
-set -a
-source .env
-set +a
-
-curl -s http://127.0.0.1:${APP_PORT}/health/live | jq
-curl -s http://127.0.0.1:${APP_PORT}/health/ready | jq
-curl -s http://127.0.0.1:${APP_PORT}/version | jq
+docker compose exec nginx nginx -t
 ```
 
-### CRUD validation
+### Inspect access and error logs directly from the Nginx container
+
+```bash
+docker compose exec nginx sh -c 'tail -n 20 /var/log/nginx/access.log'
+docker compose exec nginx sh -c 'tail -n 20 /var/log/nginx/error.log'
+```
+
+## Validate the Running API Through Nginx
+
+At this phase, the host should access the API through Nginx, not directly through the app container.
+
+### Health endpoints through Nginx
 
 ```bash
 set -a
 source .env
 set +a
 
-curl -s -X POST http://127.0.0.1:${APP_PORT}/services \
+curl -s http://127.0.0.1:${NGINX_PORT}/health/live | jq
+curl -s http://127.0.0.1:${NGINX_PORT}/health/ready | jq
+curl -s http://127.0.0.1:${NGINX_PORT}/version | jq
+```
+
+### CRUD validation through Nginx
+
+Use a unique service name and capture the real returned id to avoid problems with persistent volumes and previously inserted data.
+
+```bash
+set -a
+source .env
+set +a
+
+SERVICE_NAME="opsledger-api-nginx-$(date +%s)"
+
+SERVICE_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/services" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"opsledger-api","owner_team":"platform","tier":"internal","description":"Primary API service for OpsLedger."}' | jq
+  -d "{
+    \"name\":\"${SERVICE_NAME}\",
+    \"owner_team\":\"platform\",
+    \"tier\":\"internal\",
+    \"description\":\"Nginx reverse proxy validation service.\"
+  }")
 
-curl -s http://127.0.0.1:${APP_PORT}/services | jq
+echo "${SERVICE_RESPONSE}" | jq
 
-curl -s -X POST http://127.0.0.1:${APP_PORT}/deployments \
+SERVICE_ID=$(echo "${SERVICE_RESPONSE}" | jq -r '.id')
+
+echo "Captured SERVICE_ID=${SERVICE_ID}"
+
+curl -s "http://127.0.0.1:${NGINX_PORT}/services" | jq
+
+DEPLOYMENT_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/deployments" \
   -H 'Content-Type: application/json' \
-  -d '{"service_id":1,"version":"0.1.0","environment":"local","status":"planned"}' | jq
+  -d "{
+    \"service_id\": ${SERVICE_ID},
+    \"version\":\"0.1.0\",
+    \"environment\":\"local\",
+    \"status\":\"planned\"
+  }")
 
-curl -s http://127.0.0.1:${APP_PORT}/deployments | jq
+echo "${DEPLOYMENT_RESPONSE}" | jq
 
-curl -s -X POST http://127.0.0.1:${APP_PORT}/incidents \
+curl -s "http://127.0.0.1:${NGINX_PORT}/deployments" | jq
+
+INCIDENT_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/incidents" \
   -H 'Content-Type: application/json' \
-  -d '{"service_id":1,"severity":"low","status":"open","summary":"Compose validation incident."}' | jq
+  -d "{
+    \"service_id\": ${SERVICE_ID},
+    \"severity\":\"low\",
+    \"status\":\"open\",
+    \"summary\":\"Nginx reverse proxy validation incident.\"
+  }")
 
-curl -s http://127.0.0.1:${APP_PORT}/incidents | jq
+echo "${INCIDENT_RESPONSE}" | jq
+
+curl -s "http://127.0.0.1:${NGINX_PORT}/incidents" | jq
 ```
 
 ## What Should Be True After Compose Validation
 
 You should be able to confirm all of the following:
 
-- `docker compose ps` shows both services up
+- `docker compose ps` shows all three services up
 - PostgreSQL is healthy
 - app is healthy
+- Nginx is healthy
 - Alembic migrations apply successfully from the app container
-- `/health/live` returns OK
-- `/health/ready` returns OK with database reachable
-- service, deployment, and incident records can be created and listed
+- Nginx configuration validates successfully with `nginx -t`
+- `/health/live` returns OK through Nginx
+- `/health/ready` returns OK through Nginx with database reachable
+- service, deployment, and incident records can be created and listed through Nginx
 - PostgreSQL state persists through the named volume
+- app is no longer the main host-exposed entrypoint
 
 ## Persistence Model
 
@@ -520,12 +605,27 @@ or
 
 for the containerized app, because container-to-container communication must happen through the Compose service name.
 
+### Nginx-to-app connection path
+
+Inside Compose, Nginx must proxy to:
+
+```text
+app:8000
+```
+
 ### Host-side DB access
 
 If you need to connect from the host to the Compose PostgreSQL service, use:
 
 - host: `127.0.0.1`
 - port: `5433`
+
+### Host-side app access
+
+At Phase 06, the API should be accessed from the host through Nginx:
+
+- host: `127.0.0.1`
+- port: `${NGINX_PORT}`
 
 ## Evidence Expectations
 
@@ -534,9 +634,11 @@ By the current phase, useful validation evidence includes:
 - Compose services up
 - PostgreSQL health healthy
 - app health healthy
+- Nginx health healthy
 - Alembic migration applied
-- `/health/ready` returning success
-- CRUD validation against the Compose stack
+- Nginx config validated
+- `/health/ready` returning success through Nginx
+- CRUD validation through Nginx
 - pytest outputs and coverage artifacts
 
 ## Related Documents

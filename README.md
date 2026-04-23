@@ -1,6 +1,6 @@
 # OpsLedger Platform
 
-Local-first DevOps/SRE lab built on Ubuntu 24.04 with FastAPI, PostgreSQL, Docker Compose, pytest, Alembic, Jenkins, Bash-based blue/green deployment, and rollback.
+Local-first DevOps/SRE lab built on Ubuntu 24.04 with FastAPI, PostgreSQL, Docker Compose, Nginx, pytest, Alembic, Jenkins, Bash-based blue/green deployment, and rollback.
 
 ## Purpose
 
@@ -19,8 +19,8 @@ The application is intentionally small, but the delivery model is not. The goal 
 - automated tests
 - containerization
 - Compose orchestration
-- health checks
 - reverse proxying
+- health checks
 - CI/CD
 - blue/green deployment
 - rollback
@@ -64,6 +64,7 @@ Completed so far:
 - Phase 03 — PostgreSQL, SQLAlchemy, and Alembic integration added
 - Phase 04 — pytest unit and integration testing baseline added
 - Phase 05 — app dockerized and stack runs with Docker Compose
+- Phase 06 — Nginx added as reverse proxy in front of the app
 
 ## Key Technical Decisions
 
@@ -84,6 +85,10 @@ Completed so far:
 - **Compose PostgreSQL host port:**
   - `5433` on host
   - `5432` inside the Compose network
+
+- **Reverse proxy strategy:**
+  - Nginx is the host entrypoint
+  - app is internal-only inside the Compose network
 
 ## Repository Structure
 
@@ -163,67 +168,84 @@ Completed so far:
 
 ## Run Locally with Docker Compose
 
-1. **Copy the environment file**
+### 1. Copy the environment file
 
-   ```bash
-   cp .env.example .env
-   ```
+```bash
+cp .env.example .env
+```
 
-2. **Validate the rendered Compose configuration**
+### 2. Validate the rendered Compose configuration
 
-   ```bash
-   docker compose config
-   ```
+```bash
+docker compose config
+```
 
-3. **Build and start the stack**
+### 3. Check that the Nginx host port is free
 
-   ```bash
-   docker compose up -d --build
-   ```
+```bash
+set -a
+source .env
+set +a
 
-4. **Run database migrations from the app container**
+ss -ltnp | grep ":${NGINX_PORT}\b" || true
+```
 
-   ```bash
-   docker compose exec app alembic upgrade head
-   docker compose exec app alembic current
-   ```
+### 4. Build and start the stack
 
-5. **Validate the running services**
+```bash
+docker compose up -d --build
+```
 
-   ```bash
-   docker compose ps
-   docker compose logs --no-color postgres
-   docker compose logs --no-color app
-   ```
+### 5. Run database migrations from the app container
 
-6. **Validate the API**
+```bash
+docker compose exec app alembic upgrade head
+docker compose exec app alembic current
+```
 
-   ```bash
-   curl -s http://127.0.0.1:8000/health/live | jq
-   curl -s http://127.0.0.1:8000/health/ready | jq
-   curl -s http://127.0.0.1:8000/version | jq
-   ```
+### 6. Validate the running services
+
+```bash
+docker compose ps
+docker compose logs --no-color postgres
+docker compose logs --no-color app
+docker compose logs --no-color nginx
+```
+
+### 7. Validate the API through Nginx
+
+```bash
+set -a
+source .env
+set +a
+
+curl -s http://127.0.0.1:${NGINX_PORT}/health/live | jq
+curl -s http://127.0.0.1:${NGINX_PORT}/health/ready | jq
+curl -s http://127.0.0.1:${NGINX_PORT}/version | jq
+```
 
 ## Important Networking Note
 
 This project intentionally publishes the Compose PostgreSQL service on:
 
-```text
-127.0.0.1:5433
-```
+`127.0.0.1:5433`
 
 This avoids conflict with any local PostgreSQL already using host port `5432`.
 
 Inside the Compose network, the application still connects to PostgreSQL using the service name:
 
-```text
-postgres:5432
-```
+`postgres:5432`
+
+At the current phase, host traffic should reach the API through Nginx:
+
+`127.0.0.1:${NGINX_PORT}`
 
 That means:
 
-- host-side access: `127.0.0.1:5433`
-- container-to-container access: `postgres:5432`
+- host-side PostgreSQL access: `127.0.0.1:5433`
+- container-to-container PostgreSQL access: `postgres:5432`
+- host-side application access: `127.0.0.1:${NGINX_PORT}`
+- internal reverse-proxy target: `app:8000`
 
 ## Local Development Without Compose
 
@@ -246,7 +268,7 @@ uvicorn app.main:app --reload
 
 ## Automated Testing
 
-The test suite uses pytest with:
+The test suite uses `pytest` with:
 
 - unit tests
 - integration tests
@@ -290,9 +312,7 @@ This separation is deliberate because later phases will use these endpoints in:
 
 PostgreSQL data is stored in the named Docker volume:
 
-```text
-opsledger_postgres_data
-```
+`opsledger_postgres_data`
 
 This ensures that the Compose stack is reproducible while preserving database state across container restarts.
 
@@ -310,6 +330,70 @@ Practical rules:
 - avoid destructive schema changes in the same release where rollback is expected
 - treat rollback as an application rollback first
 - document migration caveats in ADRs and runbooks
+
+## Reverse Proxy Validation Through Nginx
+
+At Phase 06, Nginx is the expected host entrypoint.
+
+### Validate Nginx configuration
+
+```bash
+docker compose exec nginx nginx -t
+```
+
+### Inspect Nginx logs
+
+```bash
+docker compose exec nginx sh -c 'tail -n 20 /var/log/nginx/access.log'
+docker compose exec nginx sh -c 'tail -n 20 /var/log/nginx/error.log'
+```
+
+### Validate CRUD through Nginx with a unique service name
+
+```bash
+set -a
+source .env
+set +a
+
+SERVICE_NAME="opsledger-api-nginx-$(date +%s)"
+
+SERVICE_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/services"   -H 'Content-Type: application/json'   -d "{
+    \"name\":\"${SERVICE_NAME}\",
+    \"owner_team\":\"platform\",
+    \"tier\":\"internal\",
+    \"description\":\"Nginx reverse proxy validation service.\"
+  }")
+
+echo "${SERVICE_RESPONSE}" | jq
+
+SERVICE_ID=$(echo "${SERVICE_RESPONSE}" | jq -r '.id')
+
+echo "Captured SERVICE_ID=${SERVICE_ID}"
+
+curl -s "http://127.0.0.1:${NGINX_PORT}/services" | jq
+
+DEPLOYMENT_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/deployments"   -H 'Content-Type: application/json'   -d "{
+    \"service_id\": ${SERVICE_ID},
+    \"version\":\"0.1.0\",
+    \"environment\":\"local\",
+    \"status\":\"planned\"
+  }")
+
+echo "${DEPLOYMENT_RESPONSE}" | jq
+
+curl -s "http://127.0.0.1:${NGINX_PORT}/deployments" | jq
+
+INCIDENT_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/incidents"   -H 'Content-Type: application/json'   -d "{
+    \"service_id\": ${SERVICE_ID},
+    \"severity\":\"low\",
+    \"status\":\"open\",
+    \"summary\":\"Nginx reverse proxy validation incident.\"
+  }")
+
+echo "${INCIDENT_RESPONSE}" | jq
+
+curl -s "http://127.0.0.1:${NGINX_PORT}/incidents" | jq
+```
 
 ## Documentation
 
@@ -335,14 +419,18 @@ Project documentation is part of the deliverable, not an afterthought.
 
 ## Architecture Summary
 
-At the current phase, the stack runs as two Compose services:
+At the current phase, the stack runs as three Compose services:
 
 - `postgres`
 - `app`
+- `nginx`
+
+Current request flow:
+
+`host -> nginx -> app -> postgres`
 
 Later phases will extend this with:
 
-- Nginx reverse proxy
 - Jenkins controller
 - Jenkins agent
 - blue/green deployment logic
@@ -357,6 +445,7 @@ The repository stores visual and operational evidence such as:
 - PostgreSQL and Alembic validation
 - pytest output and coverage
 - Compose runtime validation
+- Nginx reverse proxy validation
 
 ### Suggested Evidence Locations
 
@@ -366,6 +455,7 @@ The repository stores visual and operational evidence such as:
 - `assets/screenshots/phase-03/`
 - `assets/screenshots/phase-04/`
 - `assets/screenshots/phase-05/`
+- `assets/screenshots/phase-06/`
 
 ## Roadmap
 
