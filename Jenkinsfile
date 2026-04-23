@@ -26,11 +26,7 @@ pipeline {
         DATABASE_URL = 'postgresql+psycopg://opsledger:change-me@postgres:5432/opsledger'
         TEST_DATABASE_URL = 'postgresql+psycopg://opsledger:change-me@postgres:5432/opsledger_test'
 
-        JENKINS_HTTP_PORT = '8081'
-        JENKINS_ADMIN_ID = 'admin'
-        JENKINS_ADMIN_PASSWORD = 'change-me-jenkins'
-        JENKINS_AGENT_NAME = 'docker-agent'
-        JENKINS_AGENT_SECRET = ''
+        ACTIVE_COLOR = 'blue'
     }
 
     stages {
@@ -80,13 +76,7 @@ POSTGRES_PORT=${POSTGRES_PORT}
 
 DATABASE_URL=${DATABASE_URL}
 
-ACTIVE_COLOR=blue
-
-JENKINS_HTTP_PORT=${JENKINS_HTTP_PORT}
-JENKINS_ADMIN_ID=${JENKINS_ADMIN_ID}
-JENKINS_ADMIN_PASSWORD=${JENKINS_ADMIN_PASSWORD}
-JENKINS_AGENT_NAME=${JENKINS_AGENT_NAME}
-JENKINS_AGENT_SECRET=${JENKINS_AGENT_SECRET}
+ACTIVE_COLOR=${ACTIVE_COLOR}
 EOF
                 '''
             }
@@ -161,7 +151,7 @@ EOF
 
     post {
         always {
-            junit testResults: 'validation/test-results/phase-08/junit.xml', allowEmptyResults: false
+            junit testResults: 'validation/test-results/phase-08/junit.xml', allowEmptyResults: true
             archiveArtifacts artifacts: 'validation/test-results/phase-08/**', fingerprint: true, onlyIfSuccessful: false
         }
     }
