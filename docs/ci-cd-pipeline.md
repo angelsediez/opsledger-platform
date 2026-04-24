@@ -4,14 +4,16 @@
 
 This document describes the current CI/CD shape of the OpsLedger Platform project.
 
-At Phase 09, the project has:
+As of Phase 10, the project has:
 
 - a functional Jenkins CI pipeline
 - a local blue/green deployment flow
 - Nginx-based traffic switching
-- a manual rollback path
+- rollback hardening
+- deploy-failure simulation
+- manual runbooks and troubleshooting support
 
-The goal of this document is to define clearly what is implemented now and what is intentionally deferred to later phases.
+The goal of this document is to define clearly what is implemented now and what remains intentionally deferred.
 
 ## Current Pipeline Model
 
@@ -42,9 +44,9 @@ When configuring the Jenkins job repository URL:
 - if `git remote get-url origin` returns an SSH URL and Jenkins does not have SSH credentials configured, use the HTTPS URL of the public repository in the job configuration
 - if the repository is private, configure the proper Jenkins credentials and use the correct repository URL accordingly
 
-## Phase 09 Pipeline Scope
+## Current Pipeline Scope
 
-At this phase, the pipeline can do both:
+At the current phase, the pipeline can do both:
 
 - CI validation
 - local blue/green deployment
@@ -58,7 +60,7 @@ Behavior:
 - `RUN_DEPLOY=false` → CI only
 - `RUN_DEPLOY=true` → CI + local blue/green deploy
 
-## Implemented Phase 09 Stages
+## Implemented Pipeline Stages
 
 1. Checkout source
 2. Validate tools and runtime environment
@@ -96,7 +98,7 @@ Confirms the Jenkins agent has the required tools:
 
 Creates a CI-local `.env` in the workspace so Compose and test commands have the expected variables without depending on a developer-local `.env`.
 
-Important rule at Phase 09:
+Current rule:
 
 - Jenkins-specific variables and secrets are not written into the CI `.env`
 
@@ -201,17 +203,20 @@ This is required so Compose bind mounts for files such as the Nginx config work 
 
 ## Current Output and Artifacts
 
-The pipeline currently publishes:
+The project currently publishes or stores:
 
 - JUnit XML test results
 - archived pytest output
 - archived HTML coverage report
 - archived blue/green healthcheck logs
+- manual validation logs from rollback hardening and deploy-failure simulation
 
-Artifacts are generated under:
+Operational evidence roots include:
 
 - `validation/test-results/phase-08/`
+- `validation/test-results/phase-10/`
 - `validation/healthcheck-logs/phase-09/`
+- `validation/healthcheck-logs/phase-10/`
 
 Expected files include:
 
@@ -219,6 +224,7 @@ Expected files include:
 - `junit.xml`
 - `htmlcov/`
 - healthcheck logs for blue/green validation
+- healthcheck logs for rollback hardening and failure simulation
 
 ## Current Plugin Baseline
 
@@ -234,9 +240,9 @@ The Jenkins plugin baseline required by the current pipeline is:
 - `junit`
 - `timestamper`
 
-## Validation Expectations for Phase 09
+## Validation Expectations
 
-A successful Phase 09 run should show:
+A successful current-phase run should show:
 
 - pipeline job created in Jenkins
 - checkout from SCM
@@ -253,6 +259,13 @@ A successful Phase 09 run should show:
 - active color header visible through public traffic
 - previous color still available for rollback
 
+Operational validation outside the pipeline should also demonstrate:
+
+- failed deploy simulation does not switch traffic
+- previous active color remains serving after failed promotion
+- manual rollback succeeds
+- recovery runbooks are usable
+
 ## Current Operational Boundary
 
 What is implemented now:
@@ -267,6 +280,9 @@ What is implemented now:
 - local blue/green deployment
 - Nginx traffic switching
 - manual rollback path
+- rollback hardening
+- deploy-failure simulation
+- runbooks and troubleshooting as operational support
 
 ## What Is Still Intentionally Deferred
 
@@ -280,13 +296,4 @@ This phase does not yet implement:
 - cloud deployment
 - Kubernetes rollout logic
 
-Those remain future phases by design.
-
-## Next Pipeline Direction
-
-The next phase should extend this pipeline with stronger rollback operations and documentation, including:
-
-- clearer rollback procedure
-- explicit runbooks
-- failure handling around deployment stages
-- operational recovery guidance
+Those remain out of scope by design.

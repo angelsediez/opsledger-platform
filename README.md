@@ -68,6 +68,7 @@ Completed so far:
 - Phase 07 — Jenkins local-lab added with controller + static Docker-capable agent
 - Phase 08 — Jenkins Pipeline as Code implemented with a real CI pipeline
 - Phase 09 — local blue/green deployment added with Nginx switch and healthcheck
+- Phase 10 — rollback hardening, deploy-failure simulation, runbooks and validation evidence
 
 ## Key Technical Decisions
 
@@ -195,7 +196,7 @@ Completed so far:
 
 ## Application Runtime
 
-At Phase 09, the app runtime is:
+As of Phase 10, the app runtime is:
 
 - `postgres`
 - `app_blue`
@@ -220,7 +221,7 @@ cp .env.example .env
 
 2. Make sure `HOST_CI_ROOT` exists in `.env` and `.env.example`.
 
-```bash
+```dotenv
 HOST_CI_ROOT=/home/angelsediez/jenkins-workspaces
 ```
 
@@ -246,10 +247,9 @@ set +a
 ss -ltnp | grep ":${NGINX_PORT}\b" || true
 ```
 
-6. Safely replace the old app stack without leaving orphans.
+6. Bring up the current app stack without leaving orphans.
 
 ```bash
-docker compose down --remove-orphans || true
 docker compose up -d --build --remove-orphans postgres app_blue app_green nginx
 ```
 
@@ -277,14 +277,14 @@ set -a
 source .env
 set +a
 
-curl -s http://127.0.0.1:${NGINX_PORT}/health/live | jq
-curl -s http://127.0.0.1:${NGINX_PORT}/health/ready | jq
-curl -s http://127.0.0.1:${NGINX_PORT}/version | jq
+curl -s "http://127.0.0.1:${NGINX_PORT}/health/live" | jq
+curl -s "http://127.0.0.1:${NGINX_PORT}/health/ready" | jq
+curl -s "http://127.0.0.1:${NGINX_PORT}/version" | jq
 ```
 
 ## Blue/Green Deployment
 
-Phase 09 adds a local blue/green deployment model with:
+The current blue/green deployment model uses:
 
 - `app_blue`
 - `app_green`
@@ -318,17 +318,34 @@ Nginx switches traffic by changing a small included config file.
 ./scripts/deploy-blue-green.sh
 ```
 
-### Validate switched traffic
+### Validate switched traffic using GET
 
 ```bash
 set -a
 source .env
 set +a
 
-curl -sI http://127.0.0.1:${NGINX_PORT}/health/live | grep -i X-OpsLedger-Active-Color
-curl -s  http://127.0.0.1:${NGINX_PORT}/health/ready | jq
-curl -s  http://127.0.0.1:${NGINX_PORT}/version | jq
+HEADER_COLOR="$(curl -fsS -D - -o /dev/null "http://127.0.0.1:${NGINX_PORT}/health/live" \
+  | tr -d '\r' \
+  | awk -F': ' '/^X-OpsLedger-Active-Color:/{print $2}')"
+
+echo "Nginx header color: ${HEADER_COLOR}"
+
+curl -s "http://127.0.0.1:${NGINX_PORT}/health/ready" | jq
+curl -s "http://127.0.0.1:${NGINX_PORT}/version" | jq
 ```
+
+### Controlled deploy-failure simulation
+
+```bash
+SIMULATE_FAILURE=true ./scripts/deploy-blue-green.sh || true
+```
+
+Expected behavior:
+
+- the inactive color fails promotion
+- traffic does not switch
+- the previous active color remains serving through Nginx
 
 ### Manual rollback
 
@@ -352,7 +369,9 @@ Phase 07 added a separate Jenkins control plane to the same local environment:
 
 Phase 08 turned that runtime into a real CI baseline using `Jenkinsfile`.
 
-Phase 09 extends that pipeline to run local blue/green deployment when requested.
+Phase 09 extended that pipeline to run local blue/green deployment when requested.
+
+Phase 10 hardened the rollback flow and added manual runbooks and failure simulation as operational support.
 
 ### Jenkins runtime goals
 
@@ -386,7 +405,7 @@ set -a
 source .env
 set +a
 
-until curl -fsS http://127.0.0.1:${JENKINS_HTTP_PORT}/login >/dev/null 2>&1; do
+until curl -fsS "http://127.0.0.1:${JENKINS_HTTP_PORT}/login" >/dev/null 2>&1; do
   echo "Waiting for Jenkins controller to finish initializing..."
   sleep 5
 done
@@ -421,7 +440,7 @@ Use these values:
 
 After Jenkins shows the inbound agent secret, set:
 
-```bash
+```text
 JENKINS_AGENT_SECRET=<copied-secret>
 ```
 
@@ -601,7 +620,7 @@ Inside the Compose network, the application still connects to PostgreSQL using t
 postgres:5432
 ```
 
-At the current phase, host traffic reaches the API through Nginx:
+Host traffic reaches the API through Nginx:
 
 ```text
 127.0.0.1:${NGINX_PORT}
@@ -673,13 +692,14 @@ Checks that the API process is responding.
 
 Checks that the API is responding and that PostgreSQL is reachable.
 
-This separation is deliberate because later phases will use these endpoints in:
+This separation is deliberate because it is used in:
 
 - Compose healthchecks
 - reverse proxy validation
 - deployment scripts
 - blue/green validation
 - rollback logic
+- deploy-failure simulation
 
 ## Data Persistence
 
@@ -709,7 +729,7 @@ Database schema changes are managed through Alembic.
 
 ### Migration Policy
 
-Because the project will later implement blue/green deployment and rollback, migrations must remain compatible across rollout windows.
+Because the project implements blue/green deployment and rollback, migrations must remain compatible across rollout windows.
 
 Practical rules:
 
@@ -720,7 +740,7 @@ Practical rules:
 
 ## Reverse Proxy Validation Through Nginx
 
-At Phase 06+, Nginx is the expected host entrypoint for the app stack.
+Nginx is the expected host entrypoint for the app stack.
 
 ### Validate Nginx configuration
 
@@ -734,22 +754,6 @@ docker compose exec nginx nginx -t
 docker compose exec nginx sh -c 'tail -n 20 /var/log/nginx/access.log'
 docker compose exec nginx sh -c 'tail -n 20 /var/log/nginx/error.log'
 ```
-
-## Jenkins Plugin Baseline
-
-The current plugin baseline is:
-
-- `workflow-aggregator`
-- `pipeline-stage-view`
-- `git`
-- `credentials`
-- `matrix-auth`
-- `docker-workflow`
-- `pipeline-utility-steps`
-- `junit`
-- `timestamper`
-
-This plugin set is enough to support the current CI/CD baseline without over-engineering the Jenkins runtime.
 
 ## Documentation
 
@@ -775,16 +779,16 @@ Project documentation is part of the deliverable, not an afterthought.
 
 ## Architecture Summary
 
-At the current phase, the stack runs as:
+As of Phase 10, the stack runs as:
 
-### Application Runtime
+### Application runtime
 
 - `postgres`
 - `app_blue`
 - `app_green`
 - `nginx`
 
-### CI Runtime
+### CI runtime
 
 - `jenkins-controller`
 - `jenkins-agent`
@@ -801,10 +805,7 @@ Current CI execution model:
 jenkins-controller -> jenkins-agent -> host-mounted CI workspace -> Docker Compose / pytest / blue-green scripts
 ```
 
-Later phases will extend this with:
-
-- stronger rollback flow
-- runbooks and operational recovery procedures
+Rollback hardening, failure simulation, runbooks and troubleshooting are already part of the current operational model.
 
 ## Evidence and Validation
 
@@ -820,6 +821,7 @@ The repository stores visual and operational evidence such as:
 - Jenkins agent connectivity validation
 - Jenkins pipeline execution validation
 - blue/green deploy validation
+- failed deploy validation
 - rollback validation
 
 ### Suggested Evidence Locations
@@ -834,6 +836,9 @@ The repository stores visual and operational evidence such as:
 - `assets/screenshots/phase-07/`
 - `assets/screenshots/phase-08/`
 - `assets/screenshots/phase-09/`
+- `assets/screenshots/phase-10/`
+- `validation/test-results/phase-10/`
+- `validation/healthcheck-logs/phase-10/`
 
 ## Roadmap
 
@@ -849,5 +854,5 @@ Planned sequence:
 - Phase 07 — Jenkins local in Docker
 - Phase 08 — Jenkinsfile + CI pipeline
 - Phase 09 — Blue/green deployment + switch + healthcheck
-- Phase 10 — Rollback + runbooks
-- Phase 11 — Final README/docs/evidence polish
+- Phase 10 — rollback hardening, deploy-failure simulation, runbooks and validation evidence
+- Phase 11 — final README/docs/evidence polish
