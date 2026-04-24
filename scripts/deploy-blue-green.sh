@@ -14,16 +14,29 @@ else
   TARGET_COLOR="blue"
 fi
 
+PREVIOUS_COLOR="${CURRENT_COLOR}"
 TARGET_SERVICE="app_${TARGET_COLOR}"
 
 echo "Current active color: ${CURRENT_COLOR}"
-echo "Deploying inactive color: ${TARGET_COLOR}"
+echo "Target inactive color: ${TARGET_COLOR}"
+echo "Previous color to preserve for rollback: ${PREVIOUS_COLOR}"
 
 "${COMPOSE_CMD[@]}" up -d --build "${TARGET_SERVICE}"
 
-./scripts/healthcheck.sh "${TARGET_COLOR}"
+if [[ "${SIMULATE_FAILURE:-false}" == "true" ]]; then
+  echo "Controlled failure simulation enabled"
+  echo "Stopping ${TARGET_SERVICE} before promotion healthcheck"
+  "${COMPOSE_CMD[@]}" stop "${TARGET_SERVICE}"
+fi
+
+if ! ./scripts/healthcheck.sh "${TARGET_COLOR}"; then
+  echo "Healthcheck failed for ${TARGET_COLOR}. Traffic switch aborted." >&2
+  echo "Active color remains: $(./scripts/get-active-color.sh)"
+  exit 1
+fi
+
 ./scripts/switch-nginx.sh "${TARGET_COLOR}"
 
-echo "Blue/green switch complete."
-echo "New active color: $(./scripts/get-active-color.sh)"
-echo "Previous color remains available for immediate rollback: ${CURRENT_COLOR}"
+echo "Deployment completed successfully"
+echo "Current active color: $(./scripts/get-active-color.sh)"
+echo "Previous color still available for rollback: ${PREVIOUS_COLOR}"

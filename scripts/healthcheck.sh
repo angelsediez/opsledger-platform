@@ -14,7 +14,7 @@ if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
 fi
 
 SERVICE="app_${COLOR}"
-LOG_DIR="validation/healthcheck-logs/phase-09"
+LOG_DIR="validation/healthcheck-logs/phase-10"
 mkdir -p "${LOG_DIR}"
 
 CID="$("${COMPOSE_CMD[@]}" ps -q "${SERVICE}")"
@@ -24,7 +24,9 @@ if [[ -z "${CID}" ]]; then
   exit 1
 fi
 
-echo "Waiting for ${SERVICE} container health..."
+echo "Checking health for service: ${SERVICE}"
+echo "Container ID: ${CID}"
+
 for _ in $(seq 1 60); do
   STATUS="$(docker inspect --format='{{.State.Health.Status}}' "${CID}")"
   if [[ "${STATUS}" == "healthy" ]]; then
@@ -35,7 +37,7 @@ done
 
 STATUS="$(docker inspect --format='{{.State.Health.Status}}' "${CID}")"
 if [[ "${STATUS}" != "healthy" ]]; then
-  echo "${SERVICE} did not become healthy" >&2
+  echo "Service ${SERVICE} did not become healthy. Final status: ${STATUS}" >&2
   exit 1
 fi
 
@@ -50,3 +52,6 @@ with urllib.request.urlopen("http://127.0.0.1:8000/health/ready", timeout=5) as 
     payload = json.loads(response.read().decode())
     print(json.dumps(payload, indent=2))
 PY
+
+echo "Healthcheck passed for ${SERVICE}"
+echo "Log saved to ${LOG_FILE}"
