@@ -842,7 +842,7 @@ The repository stores visual and operational evidence such as:
 
 ## Roadmap
 
-Planned sequence:
+Completed sequence:
 
 - Phase 00 — Baseline host and tooling
 - Phase 01 — Repository structure and documentation baseline
@@ -855,4 +855,3 @@ Planned sequence:
 - Phase 08 — Jenkinsfile + CI pipeline
 - Phase 09 — Blue/green deployment + switch + healthcheck
 - Phase 10 — rollback hardening, deploy-failure simulation, runbooks and validation evidence
-- Phase 11 — final README/docs/evidence polish
