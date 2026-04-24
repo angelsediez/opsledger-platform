@@ -398,11 +398,201 @@ At this point, the local architecture contains two active coordinated domains:
 
 The CI runtime now consumes the same repository that defines the application and operational stack.
 
+## Phase 09 Update — Local blue/green switching enters the runtime
+
+At this phase the application runtime evolves from a single internal app service to two explicit color variants:
+
+- `app_blue`
+- `app_green`
+
+### Blue/Green Execution Model
+
+Only one color is active behind Nginx at a time.
+
+The public request flow becomes:
+
+- host -> nginx -> active color -> postgres
+
+The inactive color is deployed first, validated, and only then promoted to receive traffic.
+
+### Switch Mechanism
+
+Nginx remains the public entrypoint and now owns the traffic switch through a small included config fragment.
+
+The switch flow is:
+
+- determine the current active color
+- identify the inactive color
+- deploy or recreate the inactive color
+- validate `/health/ready` on the inactive color
+- rewrite the active Nginx include
+- validate Nginx configuration
+- reload Nginx
+- keep the previous color running for immediate rollback
+
+This keeps the switching logic understandable and interview-defensible without introducing orchestration complexity beyond what the project needs.
+
+### Nginx Routing Model at Phase 09
+
+Nginx now defines upstreams for both colors:
+
+- `app_blue_backend`
+- `app_green_backend`
+
+Traffic selection is controlled by the included file:
+
+- `docker/nginx/conf.d/includes/active_proxy_pass.conf`
+
+The initial state points to blue:
+
+- `proxy_pass http://app_blue_backend;`
+- `add_header X-OpsLedger-Active-Color blue always;`
+
+This also gives a simple external validation signal through the response header.
+
+### Runtime Services at Phase 09
+
+The application domain now includes:
+
+- `postgres`
+- `app_blue`
+- `app_green`
+- `nginx`
+
+The CI domain remains:
+
+- `jenkins-controller`
+- `jenkins-agent`
+
+### Health Model at Phase 09
+
+Health validation now matters at two levels:
+
+#### Container health
+
+- PostgreSQL:
+  - `pg_isready`
+- `app_blue`:
+  - `/health/live`
+- `app_green`:
+  - `/health/live`
+- Nginx:
+  - `nginx -t`
+
+#### Deployment promotion health
+
+Before switching traffic, the inactive color must pass:
+
+- `/health/ready`
+
+This is the promotion gate for the blue/green flow.
+
+### Rollback Model at Phase 09
+
+Rollback is intentionally simple and traffic-based.
+
+The previous color remains running after the switch.  
+Rollback consists of:
+
+- validating the other color
+- updating the active Nginx include
+- reloading Nginx
+
+This provides an immediate return path without first rebuilding the previous color.
+
+### Shared Database Constraint
+
+Both colors share the same PostgreSQL database.
+
+That keeps the local-lab model simple and efficient, but it introduces an important operational constraint:
+
+- schema changes must remain backward-compatible across a switch and rollback window
+
+This is why the migration policy remains conservative.
+
+### Jenkins + Bind Mount Constraint
+
+At Phase 09, Jenkins can execute the blue/green deployment flow.
+
+Because the Jenkins agent uses the host Docker socket, Compose bind mounts are interpreted by the host daemon, not by the agent container filesystem.
+
+That means the deployment pipeline must run from a host-mounted workspace path that exists on the host itself.
+
+For this reason the project uses:
+
+- `HOST_CI_ROOT=/home/angelsediez/jenkins-workspaces`
+
+and the Jenkins agent mounts:
+
+- `${HOST_CI_ROOT}:${HOST_CI_ROOT}`
+
+The pipeline checks out into:
+
+- `${HOST_CI_ROOT}/opsledger-ci-workspace`
+
+Without that correction, relative bind mounts such as the Nginx config files would fail during Jenkins-driven deploys.
+
+### Jenkins Role at Phase 09
+
+The Jenkins controller remains orchestration-only.
+
+The Jenkins agent remains the execution surface for:
+
+- checkout
+- test execution
+- Compose validation
+- blue/green deployment
+- traffic switch verification
+
+No deployment work is moved onto the controller.
+
+### Current Runtime Summary After Phase 09
+
+At this point, the local architecture contains two coordinated domains:
+
+#### Application runtime
+
+- host -> nginx -> app_blue|app_green -> postgres
+
+#### CI runtime
+
+- host -> jenkins-controller -> jenkins-agent -> host-mounted CI workspace -> Docker Compose / pytest / blue-green scripts
+
+### Why Phase 09 Matters Architecturally
+
+Phase 09 is the point where the project moves from CI-only validation into controlled runtime switching.
+
+The repository now contains:
+
+- application code
+- infra code
+- reverse-proxy switch logic
+- CI code
+- deployment scripts
+- manual rollback path
+
+That makes the project substantially stronger as a DevOps/SRE portfolio artifact because it now demonstrates not only build and test automation, but also operational release control and rollback thinking.
+
+### Limitations of This Phase
+
+This is intentionally a local-lab blue/green model, not an enterprise-grade deployment platform.
+
+It does not include:
+
+- canary rollout
+- weighted routing
+- registry promotion workflow
+- service mesh
+- Kubernetes rollout logic
+- multi-environment release management
+
+Those are intentionally deferred so the design remains focused, executable, and defendable.
+
 ### Next Architectural Step
 
 Later phases will extend this architecture with:
 
-- image build validation and stronger artifact handling
-- blue/green deployment logic
-- rollback flow
-- runbooks and operational recovery procedures
+- stronger rollback procedure
+- explicit runbooks
+- failure handling around deployment steps
+- operational recovery documentation

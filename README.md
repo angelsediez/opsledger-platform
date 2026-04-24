@@ -67,38 +67,48 @@ Completed so far:
 - Phase 06 — Nginx added as reverse proxy in front of the app
 - Phase 07 — Jenkins local-lab added with controller + static Docker-capable agent
 - Phase 08 — Jenkins Pipeline as Code implemented with a real CI pipeline
+- Phase 09 — local blue/green deployment added with Nginx switch and healthcheck
 
 ## Key Technical Decisions
 
-- **Python dependency strategy:**
+- **Python dependency strategy**
   - `.venv`
   - `requirements.txt`
   - `requirements-dev.txt`
 
-- **PostgreSQL driver:**
+- **PostgreSQL driver**
   - `psycopg[binary]==3.3.3`
 
-- **Jenkins strategy:**
+- **Jenkins strategy**
   - controller + static Docker-capable agent
 
-- **Migration strategy:**
+- **Migration strategy**
   - backward-compatible migrations for blue/green and rollback
 
-- **Compose PostgreSQL host port:**
+- **Compose PostgreSQL host port**
   - `5433` on host
   - `5432` inside the Compose network
 
-- **Reverse proxy strategy:**
+- **Reverse proxy strategy**
   - Nginx is the host entrypoint
-  - app is internal-only inside the Compose network
 
-- **Jenkins execution strategy:**
+- **Jenkins execution strategy**
   - controller with `0` executors
   - builds run on the agent, not on the controller
 
-- **Docker socket tradeoff:**
+- **Docker socket tradeoff**
   - `/var/run/docker.sock` is mounted only on the Jenkins agent
   - accepted only as a local-lab tradeoff, not as a production-grade isolation model
+
+- **Blue/green strategy**
+  - `app_blue` and `app_green` run as separate services
+  - Nginx controls active traffic through an include file
+  - previous color remains available for immediate rollback
+
+- **Jenkins + bind mount strategy**
+  - CI checkout runs from a host-mounted workspace at:
+    - `/home/angelsediez/jenkins-workspaces`
+  - required because Docker bind mounts are interpreted by the host daemon, not the filesystem inside the Jenkins agent container
 
 ## Repository Structure
 
@@ -116,6 +126,7 @@ Completed so far:
 │   ├── Dockerfile
 │   ├── nginx/
 │   │   └── conf.d/
+│   │       └── includes/
 │   └── .dockerignore
 ├── jenkins/
 │   ├── controller/
@@ -123,6 +134,11 @@ Completed so far:
 │   ├── agent/
 │   └── plugins.txt
 ├── scripts/
+│   ├── deploy-blue-green.sh
+│   ├── get-active-color.sh
+│   ├── healthcheck.sh
+│   ├── rollback.sh
+│   ├── switch-nginx.sh
 │   └── utils/
 ├── tests/
 │   ├── unit/
@@ -177,6 +193,23 @@ Completed so far:
 - `GET /incidents`
 - `POST /incidents`
 
+## Application Runtime
+
+At Phase 09, the app runtime is:
+
+- `postgres`
+- `app_blue`
+- `app_green`
+- `nginx`
+
+Current public request flow:
+
+```text
+host -> nginx -> active color -> postgres
+```
+
+Only one color receives public traffic at a time.
+
 ## Run Locally with Docker Compose
 
 1. Copy the environment file.
@@ -185,13 +218,25 @@ Completed so far:
 cp .env.example .env
 ```
 
-2. Validate the rendered Compose configuration.
+2. Make sure `HOST_CI_ROOT` exists in `.env` and `.env.example`.
+
+```bash
+HOST_CI_ROOT=/home/angelsediez/jenkins-workspaces
+```
+
+3. Create the host CI workspace root.
+
+```bash
+mkdir -p /home/angelsediez/jenkins-workspaces
+```
+
+4. Validate the rendered Compose configuration.
 
 ```bash
 docker compose config
 ```
 
-3. Check that the Nginx host port is free.
+5. Check that the Nginx host port is free.
 
 ```bash
 set -a
@@ -201,29 +246,31 @@ set +a
 ss -ltnp | grep ":${NGINX_PORT}\b" || true
 ```
 
-4. Build and start the app stack.
+6. Safely replace the old app stack without leaving orphans.
 
 ```bash
-docker compose up -d --build
+docker compose down --remove-orphans || true
+docker compose up -d --build --remove-orphans postgres app_blue app_green nginx
 ```
 
-5. Run database migrations from the app container.
+7. Run database migrations from `app_blue`.
 
 ```bash
-docker compose exec app alembic upgrade head
-docker compose exec app alembic current
+docker compose exec app_blue alembic upgrade head
+docker compose exec app_blue alembic current
 ```
 
-6. Validate the running services.
+8. Validate the running services.
 
 ```bash
 docker compose ps
 docker compose logs --no-color postgres
-docker compose logs --no-color app
+docker compose logs --no-color app_blue
+docker compose logs --no-color app_green
 docker compose logs --no-color nginx
 ```
 
-7. Validate the API through Nginx.
+9. Validate the API through Nginx.
 
 ```bash
 set -a
@@ -235,6 +282,67 @@ curl -s http://127.0.0.1:${NGINX_PORT}/health/ready | jq
 curl -s http://127.0.0.1:${NGINX_PORT}/version | jq
 ```
 
+## Blue/Green Deployment
+
+Phase 09 adds a local blue/green deployment model with:
+
+- `app_blue`
+- `app_green`
+
+Nginx switches traffic by changing a small included config file.
+
+### Blue/green scripts
+
+- `scripts/get-active-color.sh`
+- `scripts/healthcheck.sh`
+- `scripts/switch-nginx.sh`
+- `scripts/deploy-blue-green.sh`
+- `scripts/rollback.sh`
+
+### Check current active color
+
+```bash
+./scripts/get-active-color.sh
+```
+
+### Validate both colors independently
+
+```bash
+./scripts/healthcheck.sh blue
+./scripts/healthcheck.sh green
+```
+
+### Deploy inactive color and switch traffic
+
+```bash
+./scripts/deploy-blue-green.sh
+```
+
+### Validate switched traffic
+
+```bash
+set -a
+source .env
+set +a
+
+curl -sI http://127.0.0.1:${NGINX_PORT}/health/live | grep -i X-OpsLedger-Active-Color
+curl -s  http://127.0.0.1:${NGINX_PORT}/health/ready | jq
+curl -s  http://127.0.0.1:${NGINX_PORT}/version | jq
+```
+
+### Manual rollback
+
+```bash
+./scripts/rollback.sh
+```
+
+Or explicitly:
+
+```bash
+./scripts/rollback.sh blue
+./scripts/rollback.sh green
+```
+
 ## Jenkins Local-Lab
 
 Phase 07 added a separate Jenkins control plane to the same local environment:
@@ -242,16 +350,18 @@ Phase 07 added a separate Jenkins control plane to the same local environment:
 - `jenkins-controller`
 - `jenkins-agent`
 
-Phase 08 turns that runtime into a real CI baseline using `Jenkinsfile` from the repository.
+Phase 08 turned that runtime into a real CI baseline using `Jenkinsfile`.
 
-### Jenkins Runtime Goals
+Phase 09 extends that pipeline to run local blue/green deployment when requested.
+
+### Jenkins runtime goals
 
 - keep the setup simple and interview-defensible
 - separate controller and agent
 - keep builds off the controller
-- execute CI through Pipeline as Code from the repo
+- execute CI/CD through Pipeline as Code from the repo
 
-### Initial Jenkins Runtime Validation
+### Initial Jenkins runtime validation
 
 1. Check that the Jenkins host port is free.
 
@@ -311,45 +421,60 @@ Use these values:
 
 After Jenkins shows the inbound agent secret, set:
 
-```text
+```bash
 JENKINS_AGENT_SECRET=<copied-secret>
 ```
 
-7. Start the agent.
+7. Make sure the Jenkins agent mounts the host CI root.
+
+The `jenkins-agent` service must include:
+
+```yaml
+environment:
+  HOST_CI_ROOT: ${HOST_CI_ROOT}
+
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock
+  - ${HOST_CI_ROOT}:${HOST_CI_ROOT}
+  - jenkins_agent_workdir:/home/jenkins/agent
+```
+
+8. Start the agent.
 
 ```bash
 docker compose --profile jenkins-agent up -d --build jenkins-agent
 ```
 
-8. Validate the agent connection.
+9. Validate the agent connection.
 
 ```bash
 set -a
 source .env
 set +a
 
-curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}"   "http://127.0.0.1:${JENKINS_HTTP_PORT}/computer/${JENKINS_AGENT_NAME}/api/json"   | jq '{displayName,offline,temporarilyOffline,assignedLabels}'
+curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}" \
+  "http://127.0.0.1:${JENKINS_HTTP_PORT}/computer/${JENKINS_AGENT_NAME}/api/json" \
+  | jq '{displayName,offline,temporarilyOffline,assignedLabels}'
 ```
 
-9. Validate installed plugins.
+10. Validate installed plugins.
 
 ```bash
 docker compose exec jenkins-controller ls /var/jenkins_home/plugins | egrep 'workflow-aggregator|pipeline-stage-view|git|credentials|matrix-auth|docker-workflow|pipeline-utility-steps|junit|timestamper'
 ```
 
-10. Validate agent tools.
+11. Validate agent tools.
 
 ```bash
 docker compose exec jenkins-agent sh -c 'docker --version && docker compose version && git --version && python3 --version && make --version | head -n 1 && jq --version'
 ```
 
-## Jenkins Pipeline CI
-
-Phase 08 adds a real CI pipeline driven by the repository `Jenkinsfile`.
+## Jenkins Pipeline CI/CD
 
 ### What the current pipeline does
 
-- checkout from SCM
+- checkout from SCM into:
+  - `/home/angelsediez/jenkins-workspaces/opsledger-ci-workspace`
 - validate tools and runtime environment on the agent
 - prepare a CI-local `.env`
 - validate Docker Compose configuration
@@ -358,6 +483,19 @@ Phase 08 adds a real CI pipeline driven by the repository `Jenkinsfile`.
 - run pytest with coverage
 - publish JUnit results
 - archive test output and coverage artifacts
+- optionally deploy inactive color and switch traffic through Nginx
+
+### Important CI correction
+
+The Jenkins pipeline does **not** write these Jenkins variables into the CI `.env`:
+
+- `JENKINS_HTTP_PORT`
+- `JENKINS_ADMIN_ID`
+- `JENKINS_ADMIN_PASSWORD`
+- `JENKINS_AGENT_NAME`
+- `JENKINS_AGENT_SECRET`
+
+That avoids repeating the previous failure around `JENKINS_AGENT_SECRET`.
 
 ### Create the Jenkins job
 
@@ -380,10 +518,23 @@ Configuration:
 - Branch Specifier: `*/main`
 - Script Path: `Jenkinsfile`
 
-### Repository URL note
+#### Repository URL note
 
 - if `git remote get-url origin` returns an SSH URL and Jenkins does not have SSH credentials configured, use the HTTPS URL of the public repository in the job configuration
 - if the repository is private, configure the proper Jenkins credentials and use the correct repository URL accordingly
+
+### Run CI only or CI + deploy
+
+The Jenkins job includes the parameter:
+
+```text
+RUN_DEPLOY
+```
+
+Behavior:
+
+- `RUN_DEPLOY=false` → CI only
+- `RUN_DEPLOY=true` → CI + local blue/green deploy
 
 ### Trigger the build from Jenkins UI
 
@@ -400,9 +551,14 @@ set -a
 source .env
 set +a
 
-CRUMB=$(curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}"   "http://127.0.0.1:${JENKINS_HTTP_PORT}/crumbIssuer/api/json"   | jq -r '.crumbRequestField + ":" + .crumb')
+CRUMB=$(curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}" \
+  "http://127.0.0.1:${JENKINS_HTTP_PORT}/crumbIssuer/api/json" \
+  | jq -r '.crumbRequestField + ":" + .crumb')
 
-curl -s -X POST   -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}"   -H "${CRUMB}"   "http://127.0.0.1:${JENKINS_HTTP_PORT}/job/opsledger-ci/build"
+curl -s -X POST \
+  -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}" \
+  -H "${CRUMB}" \
+  "http://127.0.0.1:${JENKINS_HTTP_PORT}/job/opsledger-ci/build"
 ```
 
 ### Validate the last build
@@ -412,7 +568,9 @@ set -a
 source .env
 set +a
 
-curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}"   "http://127.0.0.1:${JENKINS_HTTP_PORT}/job/opsledger-ci/lastBuild/api/json"   | jq '{number,result,building,duration,timestamp}'
+curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}" \
+  "http://127.0.0.1:${JENKINS_HTTP_PORT}/job/opsledger-ci/lastBuild/api/json" \
+  | jq '{number,result,building,duration,timestamp}'
 ```
 
 ### Validate published test results
@@ -422,7 +580,9 @@ set -a
 source .env
 set +a
 
-curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}"   "http://127.0.0.1:${JENKINS_HTTP_PORT}/job/opsledger-ci/lastBuild/testReport/api/json"   | jq '{failCount,skipCount,totalCount}'
+curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}" \
+  "http://127.0.0.1:${JENKINS_HTTP_PORT}/job/opsledger-ci/lastBuild/testReport/api/json" \
+  | jq '{failCount,skipCount,totalCount}'
 ```
 
 ## Important Networking Note
@@ -441,7 +601,7 @@ Inside the Compose network, the application still connects to PostgreSQL using t
 postgres:5432
 ```
 
-At the current phase, host traffic should reach the API through Nginx:
+At the current phase, host traffic reaches the API through Nginx:
 
 ```text
 127.0.0.1:${NGINX_PORT}
@@ -458,14 +618,13 @@ That means:
 - host-side PostgreSQL access: `127.0.0.1:5433`
 - container-to-container PostgreSQL access: `postgres:5432`
 - host-side application access: `127.0.0.1:${NGINX_PORT}`
-- internal reverse-proxy target: `app:8000`
 - host-side Jenkins access: `127.0.0.1:${JENKINS_HTTP_PORT}`
 
 ## Local Development Without Compose
 
 A local `.venv` workflow is also supported for earlier phases and debugging.
 
-### Create and Activate the Virtual Environment
+### Create and activate the virtual environment
 
 ```bash
 python3 -m venv .venv
@@ -473,7 +632,7 @@ source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-### Run the App Locally
+### Run the app locally
 
 ```bash
 export DATABASE_URL="postgresql+psycopg://opsledger:change-me@127.0.0.1:5432/opsledger"
@@ -489,14 +648,14 @@ The test suite uses pytest with:
 - fixtures in `tests/conftest.py`
 - coverage output stored under `validation/test-results/`
 
-### Create the Test Database
+### Create the test database
 
 ```bash
 docker exec opsledger-postgres-dev psql -U opsledger -d postgres -c "DROP DATABASE IF EXISTS opsledger_test WITH (FORCE);"
 docker exec opsledger-postgres-dev psql -U opsledger -d postgres -c "CREATE DATABASE opsledger_test;"
 ```
 
-### Run the Tests
+### Run the tests
 
 ```bash
 source .venv/bin/activate
@@ -563,69 +722,22 @@ Practical rules:
 
 At Phase 06+, Nginx is the expected host entrypoint for the app stack.
 
-### Validate Nginx Configuration
+### Validate Nginx configuration
 
 ```bash
 docker compose exec nginx nginx -t
 ```
 
-### Inspect Nginx Logs
+### Inspect Nginx logs
 
 ```bash
 docker compose exec nginx sh -c 'tail -n 20 /var/log/nginx/access.log'
 docker compose exec nginx sh -c 'tail -n 20 /var/log/nginx/error.log'
 ```
 
-### Validate CRUD Through Nginx with a Unique Service Name
-
-```bash
-set -a
-source .env
-set +a
-
-SERVICE_NAME="opsledger-api-nginx-$(date +%s)"
-
-SERVICE_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/services"   -H 'Content-Type: application/json'   -d "{
-    "name":"${SERVICE_NAME}",
-    "owner_team":"platform",
-    "tier":"internal",
-    "description":"Nginx reverse proxy validation service."
-  }")
-
-echo "${SERVICE_RESPONSE}" | jq
-
-SERVICE_ID=$(echo "${SERVICE_RESPONSE}" | jq -r '.id')
-
-echo "Captured SERVICE_ID=${SERVICE_ID}"
-
-curl -s "http://127.0.0.1:${NGINX_PORT}/services" | jq
-
-DEPLOYMENT_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/deployments"   -H 'Content-Type: application/json'   -d "{
-    "service_id": ${SERVICE_ID},
-    "version":"0.1.0",
-    "environment":"local",
-    "status":"planned"
-  }")
-
-echo "${DEPLOYMENT_RESPONSE}" | jq
-
-curl -s "http://127.0.0.1:${NGINX_PORT}/deployments" | jq
-
-INCIDENT_RESPONSE=$(curl -s -X POST "http://127.0.0.1:${NGINX_PORT}/incidents"   -H 'Content-Type: application/json'   -d "{
-    "service_id": ${SERVICE_ID},
-    "severity":"low",
-    "status":"open",
-    "summary":"Nginx reverse proxy validation incident."
-  }")
-
-echo "${INCIDENT_RESPONSE}" | jq
-
-curl -s "http://127.0.0.1:${NGINX_PORT}/incidents" | jq
-```
-
 ## Jenkins Plugin Baseline
 
-The Phase 08 plugin baseline is:
+The current plugin baseline is:
 
 - `workflow-aggregator`
 - `pipeline-stage-view`
@@ -637,7 +749,7 @@ The Phase 08 plugin baseline is:
 - `junit`
 - `timestamper`
 
-This plugin set is enough to support the current CI pipeline without over-engineering the Jenkins runtime.
+This plugin set is enough to support the current CI/CD baseline without over-engineering the Jenkins runtime.
 
 ## Documentation
 
@@ -668,7 +780,8 @@ At the current phase, the stack runs as:
 ### Application Runtime
 
 - `postgres`
-- `app`
+- `app_blue`
+- `app_green`
 - `nginx`
 
 ### CI Runtime
@@ -679,20 +792,19 @@ At the current phase, the stack runs as:
 Current request flow for the application stack:
 
 ```text
-host -> nginx -> app -> postgres
+host -> nginx -> active color -> postgres
 ```
 
 Current CI execution model:
 
 ```text
-jenkins-controller -> jenkins-agent -> repository workspace -> Docker Compose / pytest
+jenkins-controller -> jenkins-agent -> host-mounted CI workspace -> Docker Compose / pytest / blue-green scripts
 ```
 
 Later phases will extend this with:
 
-- image build validation
-- blue/green deployment logic
-- rollback scripts
+- stronger rollback flow
+- runbooks and operational recovery procedures
 
 ## Evidence and Validation
 
@@ -707,6 +819,8 @@ The repository stores visual and operational evidence such as:
 - Jenkins controller validation
 - Jenkins agent connectivity validation
 - Jenkins pipeline execution validation
+- blue/green deploy validation
+- rollback validation
 
 ### Suggested Evidence Locations
 
@@ -719,6 +833,7 @@ The repository stores visual and operational evidence such as:
 - `assets/screenshots/phase-06/`
 - `assets/screenshots/phase-07/`
 - `assets/screenshots/phase-08/`
+- `assets/screenshots/phase-09/`
 
 ## Roadmap
 
