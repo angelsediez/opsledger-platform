@@ -1,0 +1,27 @@
+Current active color: green
+Rollback target color: blue
+Previous color after rollback would become: green
+Checking health for service: app_blue
+Container ID: 718bb151bb241d11e9685faf9114f009915804708a45ed563835396273881a5d
+{
+  "status": "ok",
+  "app_name": "opsledger-platform",
+  "app_version": "0.1.0",
+  "environment": "local",
+  "timestamp": "2026-04-24T05:36:19.118814Z",
+  "checks": {
+    "application": "ok",
+    "database": "ok"
+  },
+  "note": "Readiness validates both API responsiveness and database reachability."
+}
+Healthcheck passed for app_blue
+Log saved to validation/healthcheck-logs/phase-10/app_blue-ready-20260423-223618.log
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/04/24 05:36:19 [notice] 877#877: signal process started
+Nginx switch completed
+Previous active color: green
+New active color: blue
+Rollback completed successfully
+New active color: blue

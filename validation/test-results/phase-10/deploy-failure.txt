@@ -1,0 +1,91 @@
+Current active color: blue
+Target inactive color: green
+Previous color to preserve for rollback: blue
+ Image opsledger-app:local Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 574B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 431B done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.12-slim
+#3 DONE 1.2s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 164B done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 3.53kB done
+#5 DONE 0.0s
+
+#6 [1/7] FROM docker.io/library/python:3.12-slim@sha256:520153e2deb359602c9cffd84e491e3431d76e7bf95a3255c9ce9433b76ab99a
+#6 resolve docker.io/library/python:3.12-slim@sha256:520153e2deb359602c9cffd84e491e3431d76e7bf95a3255c9ce9433b76ab99a 0.0s done
+#6 DONE 0.0s
+
+#7 [2/7] WORKDIR /app
+#7 CACHED
+
+#8 [6/7] COPY alembic /app/alembic
+#8 CACHED
+
+#9 [3/7] COPY requirements.txt /app/requirements.txt
+#9 CACHED
+
+#10 [5/7] COPY app /app/app
+#10 CACHED
+
+#11 [4/7] RUN pip install --upgrade pip && pip install -r /app/requirements.txt
+#11 CACHED
+
+#12 [7/7] COPY alembic.ini /app/alembic.ini
+#12 CACHED
+
+#13 exporting to image
+#13 exporting layers done
+#13 exporting manifest sha256:9832017772cde77fcf9739857c4c1801775c1a620e44928768b5288ca6fe52ad done
+#13 exporting config sha256:24bec47239e18ea5cbffc3a8f6f8d4ea677805bd8e34ed0107712b14eb2e746b
+#13 exporting config sha256:24bec47239e18ea5cbffc3a8f6f8d4ea677805bd8e34ed0107712b14eb2e746b done
+#13 exporting attestation manifest sha256:88bd62905c50957ef191b7c89e1498a212a0141a21a7c58f2dce849a7f53f09f 0.1s done
+#13 exporting manifest list sha256:699bc644b4fc65b8f6c2c0ca2a2c56a899e48a19d45095b4a28b9774ac0d5b4d
+#13 exporting manifest list sha256:699bc644b4fc65b8f6c2c0ca2a2c56a899e48a19d45095b4a28b9774ac0d5b4d 0.0s done
+#13 naming to docker.io/library/opsledger-app:local done
+#13 unpacking to docker.io/library/opsledger-app:local 0.0s done
+#13 DONE 0.2s
+
+#14 resolving provenance for metadata file
+#14 DONE 0.0s
+ Image opsledger-app:local Built 
+ Container opsledger-platform-postgres-1 Running 
+ Container opsledger-platform-app_green-1 Recreate 
+ Container opsledger-platform-app_green-1 Recreated 
+ Container opsledger-platform-postgres-1 Waiting 
+ Container opsledger-platform-postgres-1 Healthy 
+ Container opsledger-platform-app_green-1 Starting 
+ Container opsledger-platform-app_green-1 Started 
+Checking health for service: app_green
+Container ID: 1312dea251c99abd9955d301e1dab60f47d16b8a97658ab20e23cb9b1df2e3fe
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+  File "/usr/local/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 503: Service Unavailable
+Healthcheck failed for green. Traffic switch aborted.
+Active color remains: blue

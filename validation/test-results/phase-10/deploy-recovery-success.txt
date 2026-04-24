@@ -1,0 +1,91 @@
+Current active color: blue
+Target inactive color: green
+Previous color to preserve for rollback: blue
+ Image opsledger-app:local Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 574B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 431B done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.12-slim
+#3 DONE 0.4s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 164B done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 3.53kB done
+#5 DONE 0.0s
+
+#6 [1/7] FROM docker.io/library/python:3.12-slim@sha256:520153e2deb359602c9cffd84e491e3431d76e7bf95a3255c9ce9433b76ab99a
+#6 resolve docker.io/library/python:3.12-slim@sha256:520153e2deb359602c9cffd84e491e3431d76e7bf95a3255c9ce9433b76ab99a 0.0s done
+#6 DONE 0.0s
+
+#7 [2/7] WORKDIR /app
+#7 CACHED
+
+#8 [6/7] COPY alembic /app/alembic
+#8 CACHED
+
+#9 [5/7] COPY app /app/app
+#9 CACHED
+
+#10 [3/7] COPY requirements.txt /app/requirements.txt
+#10 CACHED
+
+#11 [4/7] RUN pip install --upgrade pip && pip install -r /app/requirements.txt
+#11 CACHED
+
+#12 [7/7] COPY alembic.ini /app/alembic.ini
+#12 CACHED
+
+#13 exporting to image
+#13 exporting layers done
+#13 exporting manifest sha256:9832017772cde77fcf9739857c4c1801775c1a620e44928768b5288ca6fe52ad done
+#13 exporting config sha256:24bec47239e18ea5cbffc3a8f6f8d4ea677805bd8e34ed0107712b14eb2e746b done
+#13 exporting attestation manifest sha256:e8431a02f1f3b70c8b8fcb5c21486abaad8fd0a8ecd8d902cd880aee5871bb00
+#13 exporting attestation manifest sha256:e8431a02f1f3b70c8b8fcb5c21486abaad8fd0a8ecd8d902cd880aee5871bb00 0.1s done
+#13 exporting manifest list sha256:fee085344743d365dee957e8e71042e04b0d2b1eb1e2fd649019e607d0c6e4d2 0.0s done
+#13 naming to docker.io/library/opsledger-app:local done
+#13 unpacking to docker.io/library/opsledger-app:local 0.0s done
+#13 DONE 0.2s
+
+#14 resolving provenance for metadata file
+#14 DONE 0.0s
+ Image opsledger-app:local Built 
+ Container opsledger-platform-postgres-1 Running 
+ Container opsledger-platform-app_green-1 Recreate 
+ Container opsledger-platform-app_green-1 Recreated 
+ Container opsledger-platform-postgres-1 Waiting 
+ Container opsledger-platform-postgres-1 Healthy 
+ Container opsledger-platform-app_green-1 Starting 
+ Container opsledger-platform-app_green-1 Started 
+Checking health for service: app_green
+Container ID: 08136839b6921ca28a5976243bcb0767fc486787d5a0220422ea00fe0df27173
+{
+  "status": "ok",
+  "app_name": "opsledger-platform",
+  "app_version": "0.1.0",
+  "environment": "local",
+  "timestamp": "2026-04-24T05:35:10.420766Z",
+  "checks": {
+    "application": "ok",
+    "database": "ok"
+  },
+  "note": "Readiness validates both API responsiveness and database reachability."
+}
+Healthcheck passed for app_green
+Log saved to validation/healthcheck-logs/phase-10/app_green-ready-20260423-223509.log
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/04/24 05:35:10 [notice] 809#809: signal process started
+Nginx switch completed
+Previous active color: blue
+New active color: green
+Deployment completed successfully
+Current active color: green
+Previous color still available for rollback: blue
