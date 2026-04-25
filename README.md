@@ -1,8 +1,10 @@
 <div align="center">
 
-# ⚙️ OpsLedger Platform
+<img src="assets/logos/opsledger-logo-horizontal.png" width="560" alt="OpsLedger Platform logo" />
 
-### Local-first DevOps/SRE homelab for practicing CI/CD, reverse proxying, blue/green deployment, rollback, and failure simulation
+# OpsLedger Platform
+
+### Local-first DevOps/SRE homelab for operating a small internal platform with CI/CD, Nginx, blue/green deployment, rollback, and failure simulation
 
 ![Status](https://img.shields.io/badge/Status-Validated_Lab-brightgreen?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)
@@ -16,50 +18,72 @@
 
 ---
 
-## 📌 Overview
+## Overview
 
-**OpsLedger Platform** is a production-style local DevOps/SRE homelab built around a small internal API. The app is intentionally minimal, but the delivery and operations model is deliberately operationally rich.
+**OpsLedger Platform** is a production-inspired local DevOps/SRE homelab built around a small internal FastAPI service. The application surface is intentionally minimal, while the delivery, runtime, rollback, and failure-handling workflows are intentionally operationally rich.
 
-The purpose of this lab is to practice, study, and validate platform engineering workflows in a reproducible local environment:
+The lab is designed to practice and validate how a service behaves when it is operated with real platform engineering concerns:
 
-- API runtime with FastAPI
-- PostgreSQL persistence
-- Alembic migrations
-- pytest unit/integration testing
-- Docker image build and Docker Compose orchestration
-- Nginx reverse proxy entrypoint
-- Jenkins controller/agent CI/CD
-- Pipeline as Code with `Jenkinsfile`
-- local blue/green deployment
-- readiness healthcheck gate before traffic switch
-- manual rollback
-- controlled deploy-failure simulation
-- runbooks, troubleshooting, screenshots, and validation evidence
+- database-backed API runtime with FastAPI, PostgreSQL, SQLAlchemy, and Alembic
+- Docker Compose service orchestration with healthchecks and named volumes
+- Nginx as the public reverse proxy and traffic-switching entrypoint
+- Jenkins controller/agent CI/CD with Pipeline as Code
+- local blue/green deployment using `app_blue` and `app_green`
+- readiness-gated traffic switching
+- manual rollback and deploy-failure simulation
+- runbooks, troubleshooting guides, screenshots, and validation evidence
 
 > [!IMPORTANT]
 > **Lab State:** Complete v1 local baseline.  
-> **Final Baseline:** Phase 10 — rollback hardening, deploy-failure simulation, runbooks, troubleshooting, and validation evidence.
+> **Final Baseline:** Phase 10 — rollback hardening, deploy-failure simulation, runbooks, troubleshooting, diagrams, and validation evidence.
 
 ---
 
-## 🎯 Learning Focus
+## Table of Contents
 
-This lab was built to practice and document how a small service behaves when it is operated like a production workload. The emphasis is on hands-on validation, failure handling, and repeatable operational procedures rather than application feature volume.
-
-Core learning areas:
-
-- containerized service runtime design
-- database-backed API operation
-- CI pipeline execution on a separate agent
-- reverse proxy traffic management
-- blue/green deployment mechanics
-- readiness-gated release safety
-- manual rollback and deploy-failure recovery
-- evidence-based documentation and troubleshooting
+- [System Design](#system-design)
+- [Technical Stack](#technical-stack)
+- [Completed Baseline](#completed-baseline)
+- [Quick Start](#quick-start)
+- [Blue/Green Operations](#bluegreen-operations)
+- [Jenkins CI/CD](#jenkins-cicd)
+- [Evidence Gallery](#evidence-gallery)
+- [Repository Map](#repository-map)
+- [Key Documentation](#key-documentation)
+- [Design Decisions](#design-decisions)
+- [Boundaries and Non-Goals](#boundaries-and-non-goals)
 
 ---
 
-## 🧭 Architecture at a Glance
+## System Design
+
+### Runtime Architecture
+
+<p align="center">
+  <img src="assets/diagrams/runtime-architecture.png" width="100%" alt="OpsLedger Platform runtime architecture" />
+</p>
+
+### CI/CD Flow
+
+<p align="center">
+  <img src="assets/diagrams/ci-cd-flow.png" width="100%" alt="OpsLedger Platform CI/CD flow" />
+</p>
+
+### Blue/Green Deployment Flow
+
+<p align="center">
+  <img src="assets/diagrams/blue-green-deployment.png" width="100%" alt="OpsLedger Platform blue green deployment flow" />
+</p>
+
+### Failure and Rollback Flow
+
+<p align="center">
+  <img src="assets/diagrams/failure-and-rollback-flow.png" width="100%" alt="OpsLedger Platform failure and rollback flow" />
+</p>
+
+---
+
+## Architecture at a Glance
 
 ```text
 Application runtime
@@ -84,7 +108,7 @@ jenkins-controller -> jenkins-agent -> host-mounted CI workspace -> Docker Compo
 
 ---
 
-## 🧰 Technical Stack
+## Technical Stack
 
 ### Application and Data
 
@@ -105,7 +129,23 @@ jenkins-controller -> jenkins-agent -> host-mounted CI workspace -> Docker Compo
 
 ---
 
-## ✅ Completed Baseline
+## What This Lab Practices and Validates
+
+| Area | Practiced Capability |
+| :--- | :--- |
+| API operations | Liveness, readiness, version endpoint, and resource endpoint validation |
+| Data operations | PostgreSQL persistence, Alembic migrations, and isolated test database workflow |
+| Testing | pytest unit/integration tests, coverage output, and JUnit reports |
+| Containerization | Dockerfile, Compose services, healthchecks, environment files, and named volumes |
+| Reverse proxy | Nginx as public entrypoint with active-color routing |
+| CI/CD | Jenkins controller/agent split, Pipeline as Code, artifacts, and test reports |
+| Deployment | local blue/green deployment using `app_blue` and `app_green` |
+| Release safety | readiness healthcheck required before Nginx traffic switch |
+| Recovery | manual rollback, failed deploy simulation, runbooks, and troubleshooting |
+
+---
+
+## Completed Baseline
 
 | Phase | Scope | Status |
 | :--- | :--- | :---: |
@@ -119,107 +159,11 @@ jenkins-controller -> jenkins-agent -> host-mounted CI workspace -> Docker Compo
 | Phase 07 | Jenkins controller + static Docker-capable agent | ✅ |
 | Phase 08 | Jenkins Pipeline as Code with real CI | ✅ |
 | Phase 09 | Local blue/green deployment and Nginx switch | ✅ |
-| Phase 10 | Rollback hardening, deploy-failure simulation, runbooks, and evidence | ✅ |
+| Phase 10 | Rollback hardening, deploy-failure simulation, runbooks, troubleshooting, and evidence | ✅ |
 
 ---
 
-## 🖼️ Evidence Gallery
-
-### 🚀 API and Testing Baseline
-
-| FastAPI docs | pytest and coverage |
-| :---: | :---: |
-| <img src="assets/screenshots/phase-02/P02-01-fastapi-docs.png" width="100%" alt="FastAPI docs screenshot" /> | <img src="assets/screenshots/phase-04/P04-01-pytest-collect-and-pass.png" width="100%" alt="pytest passing screenshot" /> |
-
-### 🐳 Compose and Nginx Runtime
-
-| Compose services | Nginx config and health |
-| :---: | :---: |
-| <img src="assets/screenshots/phase-05/P05-01-compose-services-up.png" width="100%" alt="Docker Compose services running" /> | <img src="assets/screenshots/phase-06/P06-02-nginx-config-and-health.png" width="100%" alt="Nginx config and health validation" /> |
-
-### 🧪 Jenkins CI/CD
-
-| Jenkins pipeline success | Test results and artifacts |
-| :---: | :---: |
-| <img src="assets/screenshots/phase-08/P08-02-jenkins-pipeline-success.png" width="100%" alt="Jenkins pipeline success" /> | <img src="assets/screenshots/phase-08/P08-03-jenkins-test-results-and-artifacts.png" width="100%" alt="Jenkins test results and artifacts" /> |
-
-### 🔁 Blue/Green Deployment and Rollback
-
-| Blue/green services | Jenkins blue/green deploy |
-| :---: | :---: |
-| <img src="assets/screenshots/phase-09/P09-01-blue-green-services-running.png" width="100%" alt="blue and green app services running" /> | <img src="assets/screenshots/phase-09/P09-04-jenkins-blue-green-deploy-success.png" width="100%" alt="Jenkins blue green deploy success" /> |
-
-### 🧯 Failure Simulation and Recovery
-
-| Failed deploy keeps previous color | Manual rollback validation |
-| :---: | :---: |
-| <img src="assets/screenshots/phase-10/P10-01-failed-deploy-keeps-previous-color-part-3.png" width="100%" alt="failed deploy keeps previous color" /> | <img src="assets/screenshots/phase-10/P10-04-manual-rollback-runbook-validation-part-2.png" width="100%" alt="manual rollback validation" /> |
-
-<details>
-<summary><strong>More screenshots</strong></summary>
-
-Evidence is organized by phase under:
-
-```text
-assets/screenshots/
-├── phase-00/
-├── phase-01/
-├── phase-02/
-├── phase-03/
-├── phase-04/
-├── phase-05/
-├── phase-06/
-├── phase-07/
-├── phase-08/
-├── phase-09/
-└── phase-10/
-```
-
-</details>
-
----
-
-## 🧪 What This Lab Practices and Validates
-
-| Area | Practiced Capability |
-| :--- | :--- |
-| API operations | Liveness, readiness, version endpoint, CRUD-style resource endpoints |
-| Data operations | PostgreSQL persistence, migrations, test database workflow |
-| Testing | pytest unit/integration tests, coverage, JUnit output |
-| Containerization | Dockerfile, Compose services, healthchecks, named volumes |
-| Reverse proxy | Nginx as public entrypoint, internal app isolation |
-| CI/CD | Jenkins controller/agent split, Pipeline as Code, artifacts, test reports |
-| Deployment | local blue/green deployment using `app_blue` and `app_green` |
-| Release safety | mandatory readiness healthcheck before traffic switch |
-| Recovery | manual rollback, failed deploy simulation, runbooks and troubleshooting |
-
----
-
-## 📂 Repository Map
-
-```text
-.
-├── app/                    # FastAPI app, routers, models, schemas, db wiring
-├── alembic/                # Alembic migration environment and versions
-├── docker/                 # App Dockerfile and Nginx config
-├── jenkins/                # Jenkins controller, agent, plugins, init scripts
-├── scripts/                # Blue/green deploy, switch, healthcheck, rollback
-├── tests/                  # Unit and integration tests
-├── docs/                   # Architecture, setup guide, CI/CD, ADR index
-├── runbooks/               # Operational rollback and deploy-failure runbooks
-├── troubleshooting/        # Debugging guides for Nginx, Jenkins, Postgres, common errors
-├── assets/screenshots/     # Phase-based visual evidence
-├── validation/             # Test results, healthcheck logs, validation artifacts
-├── docker-compose.yml
-├── Jenkinsfile
-├── Makefile
-├── requirements.txt
-└── requirements-dev.txt
-```
-
----
-
-## 🚀 Run Locally with Docker Compose
+## Quick Start
 
 ### 1. Create local environment file
 
@@ -273,7 +217,7 @@ curl -s "http://127.0.0.1:${NGINX_PORT}/version" | jq
 
 ---
 
-## 🔁 Blue/Green Operations
+## Blue/Green Operations
 
 ### Check active color
 
@@ -301,11 +245,14 @@ set -a
 source .env
 set +a
 
+ACTIVE_COLOR="$(./scripts/get-active-color.sh)"
 HEADER_COLOR="$(curl -fsS -D - -o /dev/null "http://127.0.0.1:${NGINX_PORT}/health/live" \
   | tr -d '\r' \
   | awk -F': ' '/^X-OpsLedger-Active-Color:/{print $2}')"
 
+echo "Active color file: ${ACTIVE_COLOR}"
 echo "Nginx header color: ${HEADER_COLOR}"
+test "${HEADER_COLOR}" = "${ACTIVE_COLOR}"
 ```
 
 ### Simulate a controlled failed deploy
@@ -316,9 +263,10 @@ SIMULATE_FAILURE=true ./scripts/deploy-blue-green.sh || true
 
 Expected behavior:
 
-- inactive color fails healthcheck
-- traffic switch is aborted
-- previous active color remains serving through Nginx
+- inactive color fails readiness validation
+- Nginx traffic switch is aborted
+- previous active color remains serving traffic
+- failure evidence is stored under `validation/`
 
 ### Manual rollback
 
@@ -335,11 +283,11 @@ or explicitly:
 
 ---
 
-## 🧩 Jenkins CI/CD
+## Jenkins CI/CD
 
 Jenkins runs with a controller/agent split:
 
-- `jenkins-controller`: orchestration only, `0` executors
+- `jenkins-controller`: orchestration only, configured with `0` executors
 - `jenkins-agent`: Docker-capable execution node
 
 The pipeline is defined in:
@@ -374,7 +322,90 @@ curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}" \
 
 ---
 
-## 🧾 Key Documentation
+## Evidence Gallery
+
+### API and Testing Baseline
+
+| FastAPI docs | pytest and coverage |
+| :---: | :---: |
+| <img src="assets/screenshots/phase-02/P02-01-fastapi-docs.png" width="100%" alt="FastAPI docs screenshot" /> | <img src="assets/screenshots/phase-04/P04-01-pytest-collect-and-pass.png" width="100%" alt="pytest passing screenshot" /> |
+
+### Compose and Nginx Runtime
+
+| Compose services | Nginx config and health |
+| :---: | :---: |
+| <img src="assets/screenshots/phase-05/P05-01-compose-services-up.png" width="100%" alt="Docker Compose services running" /> | <img src="assets/screenshots/phase-06/P06-02-nginx-config-and-health.png" width="100%" alt="Nginx config and health validation" /> |
+
+### Jenkins CI/CD
+
+| Jenkins pipeline success | Test results and artifacts |
+| :---: | :---: |
+| <img src="assets/screenshots/phase-08/P08-02-jenkins-pipeline-success.png" width="100%" alt="Jenkins pipeline success" /> | <img src="assets/screenshots/phase-08/P08-03-jenkins-test-results-and-artifacts.png" width="100%" alt="Jenkins test results and artifacts" /> |
+
+### Blue/Green Deployment and Rollback
+
+| Blue/green services | Jenkins blue/green deploy |
+| :---: | :---: |
+| <img src="assets/screenshots/phase-09/P09-01-blue-green-services-running.png" width="100%" alt="blue and green app services running" /> | <img src="assets/screenshots/phase-09/P09-04-jenkins-blue-green-deploy-success.png" width="100%" alt="Jenkins blue green deploy success" /> |
+
+### Failure Simulation and Recovery
+
+| Failed deploy keeps previous color | Manual rollback validation |
+| :---: | :---: |
+| <img src="assets/screenshots/phase-10/P10-01-failed-deploy-keeps-previous-color-part-3.png" width="100%" alt="failed deploy keeps previous color" /> | <img src="assets/screenshots/phase-10/P10-04-manual-rollback-runbook-validation-part-2.png" width="100%" alt="manual rollback validation" /> |
+
+<details>
+<summary><strong>Screenshot inventory</strong></summary>
+
+Evidence is organized by phase under:
+
+```text
+assets/screenshots/
+├── phase-00/
+├── phase-01/
+├── phase-02/
+├── phase-03/
+├── phase-04/
+├── phase-05/
+├── phase-06/
+├── phase-07/
+├── phase-08/
+├── phase-09/
+└── phase-10/
+```
+
+</details>
+
+---
+
+## Repository Map
+
+```text
+.
+├── app/                    # FastAPI app, routers, models, schemas, db wiring
+├── alembic/                # Alembic migration environment and versions
+├── docker/                 # App Dockerfile and Nginx config
+├── jenkins/                # Jenkins controller, agent, plugins, init scripts
+├── scripts/                # Blue/green deploy, switch, healthcheck, rollback
+├── tests/                  # Unit and integration tests
+├── docs/                   # Architecture, setup guide, CI/CD, ADR index
+├── runbooks/               # Operational rollback and deploy-failure runbooks
+├── troubleshooting/        # Debugging guides for Nginx, Jenkins, Postgres, common errors
+├── assets/
+│   ├── diagrams/           # Architecture and workflow diagrams
+│   ├── logos/              # OpsLedger branding assets
+│   └── screenshots/        # Phase-based visual evidence
+├── validation/             # Test results, healthcheck logs, validation artifacts
+├── docker-compose.yml
+├── Jenkinsfile
+├── Makefile
+├── requirements.txt
+└── requirements-dev.txt
+```
+
+---
+
+## Key Documentation
 
 | Document | Purpose |
 | :--- | :--- |
@@ -390,12 +421,13 @@ curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}" \
 
 ---
 
-## 🧠 Design Decisions
+## Design Decisions
 
 - The app is intentionally small so the focus stays on DevOps/SRE workflow.
 - PostgreSQL uses host port `5433` to avoid local `5432` conflicts.
 - Nginx is the only public app entrypoint.
 - Blue/green uses two Compose services: `app_blue` and `app_green`.
+- Nginx switches traffic by updating `active_proxy_pass.conf`.
 - Readiness healthcheck is mandatory before Nginx traffic switch.
 - Rollback is manual, explicit, and traffic-based.
 - Jenkins controller does not run builds.
@@ -404,7 +436,7 @@ curl -s -u "${JENKINS_ADMIN_ID}:${JENKINS_ADMIN_PASSWORD}" \
 
 ---
 
-## 🧱 Boundaries and Non-Goals
+## Boundaries and Non-Goals
 
 This is intentionally a **local-first practice homelab**, not a production deployment platform.
 
@@ -423,15 +455,15 @@ These are better as future experiments, separate repositories, or a v2, not requ
 
 ---
 
-## ✅ Lab Status
+## Lab Status
 
 > [!IMPORTANT]
 > **Status:** Complete ✅  
 > **Scope:** Phase 00 through Phase 10 complete.  
-> **Lab State:** Completed DevOps/SRE homelab baseline with CI/CD, blue/green deployment, rollback, failure simulation, runbooks, troubleshooting, screenshots, and validation evidence.
+> **Lab State:** Completed DevOps/SRE homelab baseline with CI/CD, blue/green deployment, rollback, failure simulation, runbooks, troubleshooting, diagrams, screenshots, and validation evidence.
 
 ---
 
-## 👤 Author
+## Author
 
 **Angel Diez**
